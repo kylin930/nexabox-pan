@@ -17,7 +17,7 @@ export async function onRequestGet(context) {
   });
 
   if (!response.ok) {
-    return new Response(JSON.stringify({ error: "向 Teachermate 获取签名失败" }), { status: response.status });
+    return new Response(JSON.stringify({ error: "获取签名失败" }), { status: response.status });
   }
 
   const data = await response.json();
