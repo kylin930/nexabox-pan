@@ -17,7 +17,7 @@
         <h3>上传大文件</h3>
         <input type="file" id="fileInput" />
         <button onclick="startUpload()">开始切片上传</button>
-        <p id="uploadStatus">准备就绪</p>
+        <p id="uploadStatus">就绪</p>
     </div>
 
     <div class="card">
@@ -149,7 +149,7 @@
                   })
               });
   
-              document.getElementById('uploadStatus').innerText = "上传全部完成！";
+              document.getElementById('uploadStatus').innerText = "上传完成！";
               loadFiles(); // 刷新列表
           }
       
@@ -192,7 +192,7 @@
               size: fileData.size
           });
   
-          log("下载任务已推送到后台，唤起浏览器原生下载引擎...");
+          log("唤起浏览器下载引擎...");
   
           setTimeout(() => {
               const iframe = document.createElement('iframe');
