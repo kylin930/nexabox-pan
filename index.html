@@ -82,7 +82,8 @@
                   // 1.1 切片 (瞬间完成)
                   const start = i * CHUNK_SIZE;
                   const end = Math.min(start + CHUNK_SIZE, file.size);
-                  const chunkBlob = file.slice(start, end);
+                  //const chunkBlob = file.slice(start, end);
+                  const chunkBlob = file.slice(start, end, 'image/png');
                   
                   // 伪装文件名，例如: movie.mp4.001.png
                   const chunkIndex = String(i + 1).padStart(3, '0');
