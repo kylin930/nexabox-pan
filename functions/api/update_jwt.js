@@ -7,7 +7,7 @@ export async function onRequestPost(context) {
     }
     
     await env.TEACHERMATE_OSS_KV.put("TEACHERMATE_JWT", data.jwt);
-    return new Response(JSON.stringify({ success: true, message: "JWT 更新成功" }), { status: 200 });
+    return new Response(JSON.stringify({ success: true, message: "JWT更新成功" }), { status: 200 });
   } catch (error) {
     return new Response("Bad Request", { status: 400 });
   }
