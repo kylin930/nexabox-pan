@@ -2,30 +2,30 @@
 <html>
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-    <title>NexaboxDrive API接口文档</title>
+    <title>NexaboxDrive API 接口文档 v1.2</title>
     <style>
-      pre {
-        border: 1px solid #000000;
-        padding: 10px;
-        font-family: "Courier New", Courier, monospace;
-    }
+        pre {
+            border: 1px solid #000000;
+            padding: 10px;
+            font-family: "Courier New", Courier, monospace;
+        }
     </style>
 </head>
 <body bgcolor="#FFFFFF" text="#000000" link="#0000FF" vlink="#800080" alink="#FF0000">
 
     <center>
-        <h1><font face="黑体" color="#000066">NexaboxDrive API接口文档</font></h1>
-        <font size="2" color="#666666"><i>最后更新时间：2026年4月</i></font>
+        <h1><font face="黑体" color="#000066">NexaboxDrive API 接口文档</font></h1>
+        <font size="2" color="#666666">内部版本 | <b>Web 1.0 兼容版</b> | 附 C# 示例</font>
     </center>
-
+    
     <hr size="2" width="90%" noshade>
 
     <blockquote>
         <h2>一、 全局鉴权说明</h2>
-        <p>所有接口请求均需要通过HTTPHeader传递Token进行身份验证。</p>
+        <p>所有接口请求均需要通过 HTTP Header 传递 Token 进行身份验证。</p>
         <table border="1" cellpadding="5" cellspacing="0" width="80%">
             <tr bgcolor="#E0E0E0">
-                <th width="30%">Header键</th>
+                <th width="30%">Header 键</th>
                 <th width="70%">格式与说明</th>
             </tr>
             <tr>
@@ -33,77 +33,224 @@
                 <td><code>Bearer &lt;您的Token&gt;</code></td>
             </tr>
         </table>
-        <p><font color="#FF0000"><b>注意：</b></font>统一账号系统会校验用户是否拥有<code>all</code>或<code>NexaboxDrive</code>权限。</p>
     </blockquote>
 
     <hr size="1" width="90%">
 
     <blockquote>
-        <h2>二、 接口列表</h2>
+        <h2>二、 核心流程详细说明</h2>
+
+        <h3>1. 大文件切片上传步骤 (Upload Chunking)</h3>
+        <p>系统采用前端切片直传 OSS 的方案，有效避免服务器带宽限制并支持超大文件：</p>
+        <ol>
+            <li><b>计算切片：</b> 客户端将文件按固定大小（默认为 250MB）划分为多个分块。</li>
+            <li><b>分块伪装：</b> 为了绕过上传限制，每个分块在上传前会被伪装成 <code>image/png</code> 格式。</li>
+            <li><b>循环上传：</b> 
+                <ul>
+                    <li>请求 <code>/api/signature</code> 获取针对该分块的 OSS 签名信息。</li>
+                    <li>将二进制数据 POST 到阿里云 OSS 存储桶。</li>
+                    <li>记录 OSS 返回的每个分块的永久 URL。</li>
+                </ul>
+            </li>
+            <li><b>元数据提交：</b> 所有分块上传成功后，将文件名、总大小及有序的分块 URL 数组提交至 <code>/api/files</code>。</li>
+        </ol>
+
+        <h3>2. 分块合并与流式下载步骤 (Download Merging)</h3>
+        <p>下载时不进行传统的物理合并，而是按顺序拉取所有分块流式写入：</p>
+        <ol>
+            <li><b>获取元数据：</b> 请求接口获取目标文件的所有分块 URL 列表。</li>
+            <li><b>建立本地文件流：</b> 在本地磁盘创建空文件。</li>
+            <li><b>顺序拉取与写入：</b> 遍历分块 URL，依次下载每个分块的数据流，并追加写入到本地文件中。</li>
+        </ol>
+    </blockquote>
+
+    <hr size="1" width="90%">
+
+    <blockquote>
+        <h2>三、 接口列表</h2>
 
         <h3>1. 获取文件列表 (List Files)</h3>
         <ul>
             <li><b>接口路径：</b> <code>/api/files</code></li>
             <li><b>请求方式：</b> <b>GET</b></li>
-            <li><b>接口描述：</b> 获取系统中已记录的所有文件信息。</li>
         </ul>
         <b>返回示例：</b>
 <pre>
 [
   {
     "id": "FILE_1714000000000",
-    "filename": "example_video.mp4",
-    "size": 524288000,
-    "chunks": [
-      "https://teachermate.oss-cn-qingdao.aliyuncs.com/chunk-001.png",
-      "https://teachermate.oss-cn-qingdao.aliyuncs.com/chunk-002.png"
-    ]
+    "filename": "backup.tar.gz",
+    "size": 1073741824,
+    "chunks": ["https://oss-url/part1", "https://oss-url/part2"]
   }
 ]
 </pre>
 
-        <br>
-
-        <h3>2. 保存文件记录 (Save File Meta)</h3>
+        <h3>2. 保存文件元数据 (Save File Meta)</h3>
         <ul>
             <li><b>接口路径：</b> <code>/api/files</code></li>
             <li><b>请求方式：</b> <b>POST</b></li>
-            <li><b>接口描述：</b> 在前端完成 OSS 上传后，提交文件元数据进行保存。</li>
         </ul>
         <b>请求数据：</b>
 <pre>
 {
-  "filename": "my_file.zip",
-  "size": 1024000,
-  "chunks": [
-    "https://oss-url-1...",
-    "https://oss-url-2..."
-  ]
-}
-</pre>
-        <b>返回示例：</b>
-<pre>
-{
-  "success": true,
-  "fileId": "FILE_1714000000000"
+  "filename": "project.zip",
+  "size": 5242880,
+  "chunks": ["url1", "url2"]
 }
 </pre>
 
-        <br>
-
-        <h3>3. 获取 OSS 上传签名 (Get OSS Signature)</h3>
+        <h3>3. 获取上传签名 (Get OSS Signature)</h3>
         <ul>
             <li><b>接口路径：</b> <code>/api/signature</code></li>
             <li><b>请求方式：</b> <b>GET</b></li>
-            <li><b>接口描述：</b> 从服务器获取直传阿里云 OSS 所需的临时签名和 Policy。</li>
         </ul>
         <b>返回示例：</b>
 <pre>
 {
   "accessKeyId": "LTAI5tXXXXXX",
-  "signature": "base64_encoded_signature_string",
-  "policy": "base64_encoded_policy_json",
+  "signature": "xxxxx...",
+  "policy": "ey...",
   "host": "https://teachermate.oss-cn-qingdao.aliyuncs.com/"
+}
+</pre>
+    </blockquote>
+
+    <hr size="1" width="90%">
+
+    <blockquote>
+        <h2>四、 客户端接入示例 (C#)</h2>
+        <p><font color="#666666">以下示例基于 .NET 6+ 和 <code>System.Net.Http</code> 编写，展示了核心的上传和下载逻辑。</font></p>
+
+        <h3>1. C# 切片上传示例 (Chunked Upload)</h3>
+<pre>
+using System;
+using System.IO;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text.Json;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+public class NexaboxUploader
+{
+    private static readonly HttpClient client = new HttpClient();
+    private const string API_BASE = "https://drive.nexabox.de";
+    private const string TOKEN = "您的TOKEN";
+    private const int CHUNK_SIZE = 250 * 1024 * 1024; // 每个分块250MB
+
+    public static async Task UploadFileAsync(string filePath)
+    {
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", TOKEN);
+        
+        FileInfo fileInfo = new FileInfo(filePath);
+        string originalName = fileInfo.Name;
+        long totalSize = fileInfo.Length;
+        int totalChunks = (int)Math.Ceiling((double)totalSize / CHUNK_SIZE);
+        List&lt;string&gt; chunkUrls = new List&lt;string&gt;();
+
+        using (FileStream fs = new FileStream(filePath, FileMode.Open, FileAccess.Read))
+        {
+            for (int i = 0; i &lt; totalChunks; i++)
+            {
+                Console.WriteLine($"准备上传分片 {i + 1}/{totalChunks}...");
+                
+                // 1. 获取签名
+                var sigRes = await client.GetStringAsync($"{API_BASE}/api/signature");
+                var sigData = JsonDocument.Parse(sigRes).RootElement;
+                string ossHost = sigData.GetProperty("host").GetString();
+                string timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString();
+                
+                // 构造伪装文件名与 OSS Key
+                string fakeFileName = $"{originalName}.{i:D3}.png";
+                string nameWithoutExt = Path.GetFileNameWithoutExtension(fakeFileName);
+                string ossKey = $"{nameWithoutExt}-{timestamp}-{fakeFileName}";
+
+                // 2. 读取当前切片数据
+                int currentChunkSize = (int)Math.Min(CHUNK_SIZE, totalSize - (i * CHUNK_SIZE));
+                byte[] buffer = new byte[currentChunkSize];
+                await fs.ReadAsync(buffer, 0, currentChunkSize);
+
+                // 3. 构建表单直传 OSS
+                using (var content = new MultipartFormDataContent())
+                {
+                    content.Add(new StringContent(sigData.GetProperty("signature").GetString()), "Signature");
+                    content.Add(new StringContent(sigData.GetProperty("accessKeyId").GetString()), "OSSAccessKeyId");
+                    content.Add(new StringContent(sigData.GetProperty("policy").GetString()), "policy");
+                    content.Add(new StringContent("200"), "success_action_status");
+                    content.Add(new StringContent(ossKey), "key");
+
+                    var fileContent = new ByteArrayContent(buffer);
+                    fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse("image/png");
+                    content.Add(fileContent, "file", fakeFileName);
+
+                    var uploadRes = await client.PostAsync(ossHost, content);
+                    uploadRes.EnsureSuccessStatusCode();
+
+                    string finalUrl = $"{ossHost}{ossKey}";
+                    chunkUrls.Add(finalUrl);
+                    Console.WriteLine($"分片 {i + 1} 上传成功: {finalUrl}");
+                }
+            }
+        }
+
+        // 4. 提交文件元数据
+        var metaData = new
+        {
+            filename = originalName,
+            size = totalSize,
+            chunks = chunkUrls
+        };
+        var jsonContent = new StringContent(JsonSerializer.Serialize(metaData), System.Text.Encoding.UTF8, "application/json");
+        var metaRes = await client.PostAsync($"{API_BASE}/api/files", jsonContent);
+        
+        if (metaRes.IsSuccessStatusCode)
+            Console.WriteLine("文件元数据保存成功，上传完毕！");
+    }
+}
+</pre>
+
+        <h3>2. C# 流式合并下载示例 (Stream Download)</h3>
+<pre>
+using System;
+using System.IO;
+using System.Net.Http;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+public class NexaboxDownloader
+{
+    private static readonly HttpClient client = new HttpClient();
+
+    // 假设已从 /api/files 获取到了对应的 chunk 列表和文件名
+    public static async Task DownloadFileAsync(string savePath, List&lt;string&gt; chunkUrls)
+    {
+        Console.WriteLine($"开始下载文件，共包含 {chunkUrls.Count} 个分片...");
+
+        // 使用 Append 模式打开或创建文件流
+        using (FileStream fs = new FileStream(savePath, FileMode.Append, FileAccess.Write, FileShare.None))
+        {
+            for (int i = 0; i &lt; chunkUrls.Count; i++)
+            {
+                string chunkUrl = chunkUrls[i];
+                Console.WriteLine($"正在拉取分片 {i + 1}/{chunkUrls.Count}...");
+
+                // 以流的方式获取响应
+                using (var response = await client.GetAsync(chunkUrl, HttpCompletionOption.ResponseHeadersRead))
+                {
+                    response.EnsureSuccessStatusCode();
+                    using (var stream = await response.Content.ReadAsStreamAsync())
+                    {
+                        // 将分片流直接复制到本地文件流中
+                        await stream.CopyToAsync(fs);
+                    }
+                }
+                Console.WriteLine($"分片 {i + 1} 写入完成。");
+            }
+        }
+        
+        Console.WriteLine($"文件合并下载成功！保存至：{savePath}");
+    }
 }
 </pre>
 
