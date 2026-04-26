@@ -1,0 +1,119 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>NexaboxDrive API接口文档</title>
+    <style>
+      pre {
+        border: 1px solid #000000;
+        padding: 10px;
+        font-family: "Courier New", Courier, monospace;
+    }
+    </style>
+</head>
+<body bgcolor="#FFFFFF" text="#000000" link="#0000FF" vlink="#800080" alink="#FF0000">
+
+    <center>
+        <h1><font face="黑体" color="#000066">NexaboxDrive API接口文档</font></h1>
+        <font size="2" color="#666666"><i>最后更新时间：2026年4月</i></font>
+    </center>
+
+    <hr size="2" width="90%" noshade>
+
+    <blockquote>
+        <h2>一、 全局鉴权说明</h2>
+        <p>所有接口请求均需要通过HTTPHeader传递Token进行身份验证。</p>
+        <table border="1" cellpadding="5" cellspacing="0" width="80%">
+            <tr bgcolor="#E0E0E0">
+                <th width="30%">Header键</th>
+                <th width="70%">格式与说明</th>
+            </tr>
+            <tr>
+                <td><b>Authorization</b></td>
+                <td><code>Bearer &lt;您的Token&gt;</code></td>
+            </tr>
+        </table>
+        <p><font color="#FF0000"><b>注意：</b></font>统一账号系统会校验用户是否拥有<code>all</code>或<code>NexaboxDrive</code>权限。</p>
+    </blockquote>
+
+    <hr size="1" width="90%">
+
+    <blockquote>
+        <h2>二、 接口列表</h2>
+
+        <h3>1. 获取文件列表 (List Files)</h3>
+        <ul>
+            <li><b>接口路径：</b> <code>/api/files</code></li>
+            <li><b>请求方式：</b> <b>GET</b></li>
+            <li><b>接口描述：</b> 获取系统中已记录的所有文件信息。</li>
+        </ul>
+        <b>返回示例：</b>
+<pre>
+[
+  {
+    "id": "FILE_1714000000000",
+    "filename": "example_video.mp4",
+    "size": 524288000,
+    "chunks": [
+      "https://teachermate.oss-cn-qingdao.aliyuncs.com/chunk-001.png",
+      "https://teachermate.oss-cn-qingdao.aliyuncs.com/chunk-002.png"
+    ]
+  }
+]
+</pre>
+
+        <br>
+
+        <h3>2. 保存文件记录 (Save File Meta)</h3>
+        <ul>
+            <li><b>接口路径：</b> <code>/api/files</code></li>
+            <li><b>请求方式：</b> <b>POST</b></li>
+            <li><b>接口描述：</b> 在前端完成 OSS 上传后，提交文件元数据进行保存。</li>
+        </ul>
+        <b>请求数据：</b>
+<pre>
+{
+  "filename": "my_file.zip",
+  "size": 1024000,
+  "chunks": [
+    "https://oss-url-1...",
+    "https://oss-url-2..."
+  ]
+}
+</pre>
+        <b>返回示例：</b>
+<pre>
+{
+  "success": true,
+  "fileId": "FILE_1714000000000"
+}
+</pre>
+
+        <br>
+
+        <h3>3. 获取 OSS 上传签名 (Get OSS Signature)</h3>
+        <ul>
+            <li><b>接口路径：</b> <code>/api/signature</code></li>
+            <li><b>请求方式：</b> <b>GET</b></li>
+            <li><b>接口描述：</b> 从服务器获取直传阿里云 OSS 所需的临时签名和 Policy。</li>
+        </ul>
+        <b>返回示例：</b>
+<pre>
+{
+  "accessKeyId": "LTAI5tXXXXXX",
+  "signature": "base64_encoded_signature_string",
+  "policy": "base64_encoded_policy_json",
+  "host": "https://teachermate.oss-cn-qingdao.aliyuncs.com/"
+}
+</pre>
+
+    </blockquote>
+
+    <br><br>
+    <center>
+        <hr size="1" width="90%">
+        <font size="2" color="#999999">Copyright &copy; 2026 Nexabox Studio. All Rights Reserved.</font><br>
+    </center>
+
+</body>
+</html>
