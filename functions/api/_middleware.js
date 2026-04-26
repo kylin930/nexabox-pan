@@ -9,7 +9,7 @@ export async function onRequest(context) {
 
   const authHeader = request.headers.get('Authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return new Response(JSON.stringify({ error: '未授权，缺少 Token' }), { 
+    return new Response(JSON.stringify({ error: '未授权，缺少Token' }), { 
       status: 401, 
       headers: { 'Content-Type': 'application/json' } 
     });
@@ -19,7 +19,7 @@ export async function onRequest(context) {
   
   const ACCOUNT_API_URL = env.STUDIO_KV; 
   if (!ACCOUNT_API_URL) {
-    return new Response(JSON.stringify({ error: '服务端未配置统一账号 API 地址' }), { status: 500 });
+    return new Response(JSON.stringify({ error: '服务端未配置统一账号API地址' }), { status: 500 });
   }
 
   try {
@@ -32,12 +32,12 @@ export async function onRequest(context) {
     const verifyData = await verifyRes.json();
 
     if (!verifyData.valid) {
-      return new Response(JSON.stringify({ error: 'Token 无效或已过期' }), { status: 401 });
+      return new Response(JSON.stringify({ error: 'Token无效或已过期' }), { status: 401 });
     }
 
     const perms = verifyData.permissions || [];
     if (!perms.includes('all') && !perms.includes('NexaboxPan')) {
-      return new Response(JSON.stringify({ error: '您没有访问该网盘的权限' }), { status: 403 });
+      return new Response(JSON.stringify({ error: '您没有访问该应用的权限' }), { status: 403 });
     }
 
     // 6. 验证通过，放行请求给下游的 API 处理 (例如 files.js)
