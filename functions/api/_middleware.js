@@ -44,6 +44,14 @@ export async function onRequest(context) {
     return next();
     
   } catch (error) {
-    return new Response(JSON.stringify({ error: '账号系统验证服务暂时不可用' }), { status: 500 });
+    // 将具体的错误信息 (error.message) 暴露出来，方便我们调试
+    return new Response(JSON.stringify({ 
+        error: '账号系统验证服务暂时不可用', 
+        detail: error.message,
+        url: `${ACCOUNT_API_URL}/api/verify` // 顺便检查一下拼接的 URL 对不对
+    }), { 
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+    });
   }
 }
