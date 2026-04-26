@@ -29,6 +29,49 @@
     <h4>运行日志</h4>
     <div id="log"></div>
   <script>
+    const ACCOUNT_URL = 'https://accounts.nexabox.de'; 
+    const APP_NAME = 'NexaboxDrive';
+
+    // 1. 检查并获取 Token
+    function checkAuth() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const tokenFromUrl = urlParams.get('token');
+
+        if (tokenFromUrl) {
+            localStorage.setItem('pan_token', tokenFromUrl);
+            // 清理 URL 上的 token，保持页面美观
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+
+        const token = localStorage.getItem('pan_token');
+        if (!token) {
+            // 未登录，跳转到统一账号系统登录
+            const currentUrl = encodeURIComponent(window.location.href);
+            window.location.href = `${ACCOUNT_URL}/login.html?app=${APP_NAME}&redirect=${currentUrl}`;
+            return null;
+        }
+        return token;
+    }
+
+    const token = checkAuth();
+
+    // 2. 封装带有身份验证的 API 请求函数
+    async function apiFetch(url, options = {}) {
+        if (!options.headers) options.headers = {};
+        options.headers['Authorization'] = `Bearer ${token}`; // 携带 Token
+        
+        const res = await fetch(url, options);
+        if (res.status === 401 || res.status === 403) {
+            alert('登录已过期或无访问权限，请重新登录！');
+            localStorage.removeItem('pan_token');
+            window.location.reload();
+        }
+        return res;
+    }
+
+    const CHUNK_SIZE = 250 * 1024 * 1024; // 250MB
+    const OSS_BASE_URL = 'https://teachermate.oss-cn-qingdao.aliyuncs.com/';
+      
       const CHUNK_SIZE = 250 * 1024 * 1024; // 250MB
       const OSS_BASE_URL = 'https://teachermate.oss-cn-qingdao.aliyuncs.com/';
   
