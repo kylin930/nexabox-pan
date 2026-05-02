@@ -84,7 +84,7 @@
 ]
 </pre>
 
-        <h3>2. 创建分享链接 (Create Share) [新增]</h3>
+        <h3>2. 创建分享链接 (Create Share)</h3>
         <ul>
             <li><b>接口路径：</b> <code>/api/share</code></li>
             <li><b>请求方式：</b> <b>POST</b></li>
@@ -93,26 +93,22 @@
         <b>请求参数：</b>
 <pre>
 {
-  "fileId": "FILE_1714000000000"
-}
-</pre>
-        <b>返回示例：</b>
-<pre>
-{
-  "success": true,
-  "shareId": "a1b2c3d4",
-  "url": "/share.html?id=a1b2c3d4"
+  "fileId": "FILE_1714000000000",
+  "password": "abcd" // 选填，留空则为公开分享
 }
 </pre>
 
-        <h3>3. 获取公共分享信息 (Get Public Share Info) [新增]</h3>
+        <h3>3. 获取公共分享信息 (Get Public Share Info)</h3>
         <ul>
             <li><b>接口路径：</b> <code>/api/public/share</code></li>
-            <li><b>请求方式：</b> <b>GET</b></li>
+            <li><b>请求方式：</b> <b>GET / POST</b></li>
             <li><b>鉴权：</b> <b>无需 Token (公开)</b></li>
         </ul>
-        <b>URL 参数：</b> <code>?id=a1b2c3d4</code>
-        <br><b>返回示例：</b> 返回该文件的原始元数据（filename, size, chunks）。
+        <b>流程说明：</b>
+        <ol>
+            <li>先发起 <b>GET</b> <code>?id=a1b2c3d4</code> 查询文件基础信息，返回：<code>{"filename":"...","size":123,"needPassword":true}</code></li>
+            <li>再发起 <b>POST</b> 提交验证数据：<code>{"id":"a1b2c3d4", "password":"abcd"}</code>，验证通过后才会返回包含 <code>chunks</code> 分片数组的完整元数据以供下载。</li>
+        </ol>
     </blockquote>
 
     <hr size="1" width="90%">
