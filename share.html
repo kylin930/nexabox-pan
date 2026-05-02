@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>NexaboxDrive - 文件分享</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; text-align: center; }
+        .card { border: 1px solid #ccc; padding: 30px; margin-top: 50px; border-radius: 10px; background-color: #fafafa; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; margin-top: 20px; }
+        #log { white-space: pre-wrap; background: #eee; padding: 10px; font-size: 12px; margin-top: 20px; text-align: left; display: none;}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>获取分享文件</h2>
+        <h3 id="filename" style="color: #333;">加载中...</h3>
+        <p id="filesize" style="color: #666;"></p>
+        <button id="downloadBtn" style="display: none;" onclick="startShareDownload()">开始下载</button>
+        <p id="errorMsg" style="color: red;"></p>
+        <div id="log"></div>
+    </div>
+
+    <script>
+        let fileData = null;
+
+        function log(msg) {
+            const logEl = document.getElementById('log');
+            logEl.style.display = 'block';
+            logEl.innerText += msg + '\n';
+        }
+
+        async function initServiceWorker() {
+            if ('serviceWorker' in navigator) {
+                try {
+                    await navigator.serviceWorker.register('/sw.js');
+                    if (!navigator.serviceWorker.controller) {
+                        await new Promise(resolve => {
+                            navigator.serviceWorker.addEventListener('controllerchange', resolve);
+                        });
+                    }
+                } catch (err) {
+                    document.getElementById('errorMsg').innerText = "您的浏览器不支持流式下载所需的环境。";
+                }
+            } else {
+                document.getElementById('errorMsg').innerText = "您的浏览器不支持 Service Worker。";
+            }
+        }
+        async function loadShareInfo() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const shareId = urlParams.get('id');
+            
+            if (!shareId) {
+                document.getElementById('errorMsg').innerText = "链接无效：缺少分享 ID";
+                document.getElementById('filename').innerText = "";
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/public/share?id=${shareId}`);
+                const data = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(data.error || "获取文件信息失败");
+                }
+
+                fileData = data;
+                document.getElementById('filename').innerText = fileData.filename;
+                document.getElementById('filesize').innerText = `大小: ${(fileData.size / 1024 / 1024).toFixed(2)} MB`;
+                document.getElementById('downloadBtn').style.display = 'inline-block';
+
+            } catch (err) {
+                document.getElementById('errorMsg').innerText = err.message;
+                document.getElementById('filename').innerText = "文件已失效或不存在";
+            }
+        }
+
+        function startShareDownload() {
+            if (!fileData) return;
+            if (!navigator.serviceWorker.controller) {
+                return alert("下载引擎未就绪，请刷新页面重试！");
+            }
+
+            log(`准备下载: ${fileData.filename}`);
+            const taskId = `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+            
+            // 向 SW 发送任务元数据
+            navigator.serviceWorker.controller.postMessage({
+                type: 'PREPARE_DOWNLOAD',
+                id: taskId,
+                filename: fileData.filename,
+                chunks: fileData.chunks,
+                size: fileData.size
+            });
+
+            log("正在唤起浏览器下载...");
+
+            setTimeout(() => {
+                const iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                iframe.src = `/virtual-download/${taskId}`; 
+                document.body.appendChild(iframe);
+                
+                setTimeout(() => document.body.removeChild(iframe), 10000);
+            }, 300);
+        }
+
+        window.onload = async () => {
+            await initServiceWorker();
+            await loadShareInfo();
+        };
+    </script>
+</body>
+</html>
