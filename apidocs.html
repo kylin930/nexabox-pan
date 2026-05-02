@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-    <title>NexaboxDrive API 接口文档 v1.2</title>
+    <title>NexaboxDrive API 接口文档 v1.3</title>
     <style>
         pre {
             border: 1px solid #000000;
@@ -15,14 +15,14 @@
 
     <center>
         <h1><font face="黑体" color="#000066">NexaboxDrive API 接口文档</font></h1>
-        <font size="2" color="#666666">内部版本 | <b>Web 1.0 兼容版</b> | 附 C# 示例</font>
+        <font size="2" color="#666666">内部版本 | <b>Web 1.0 兼容版</b> | v1.3 更新分享功能</font>
     </center>
     
     <hr size="2" width="90%" noshade>
 
     <blockquote>
         <h2>一、 全局鉴权说明</h2>
-        <p>所有接口请求均需要通过 HTTP Header 传递 Token 进行身份验证。</p>
+        <p>所有私有接口请求均需要通过 HTTP Header 传递 Token 进行身份验证。<b>公共分享接口无需此 Header。</b></p>
         <table border="1" cellpadding="5" cellspacing="0" width="80%">
             <tr bgcolor="#E0E0E0">
                 <th width="30%">Header 键</th>
@@ -41,26 +41,24 @@
         <h2>二、 核心流程详细说明</h2>
 
         <h3>1. 大文件切片上传步骤 (Upload Chunking)</h3>
-        <p>系统采用前端切片直传 OSS 的方案，有效避免服务器带宽限制并支持超大文件：</p>
+        <p>系统采用前端切片直传 OSS 的方案：</p>
         <ol>
-            <li><b>计算切片：</b> 客户端将文件按固定大小（默认为 250MB）划分为多个分块。</li>
-            <li><b>分块伪装：</b> 为了绕过上传限制，每个分块在上传前会被伪装成 <code>image/png</code> 格式。</li>
-            <li><b>循环上传：</b> 
-                <ul>
-                    <li>请求 <code>/api/signature</code> 获取针对该分块的 OSS 签名信息。</li>
-                    <li>将二进制数据 POST 到阿里云 OSS 存储桶。</li>
-                    <li>记录 OSS 返回的每个分块的永久 URL。</li>
-                </ul>
-            </li>
-            <li><b>元数据提交：</b> 所有分块上传成功后，将文件名、总大小及有序的分块 URL 数组提交至 <code>/api/files</code>。</li>
+            <li><b>计算切片：</b> 按固定大小（250MB）划分分块。</li>
+            <li><b>分块伪装：</b> 伪装成 <code>image/png</code> 格式以绕过限制。</li>
+            <li><b>循环上传：</b> 获取 OSS 签名并 POST 二进制数据。</li>
+            <li><b>元数据提交：</b> 上传完成后提交分块 URL 数组至 <code>/api/files</code>。</li>
         </ol>
 
-        <h3>2. 分块合并与流式下载步骤 (Download Merging)</h3>
-        <p>下载时不进行传统的物理合并，而是按顺序拉取所有分块流式写入：</p>
+        <h3>2. 分块合并与流式下载 (Download Merging)</h3>
+        <p>下载时不进行物理合并，通过 Service Worker 按顺序拉取分块流式写入。说明见 <code>sw.js</code>。</p>
+
+        <h3>3. 文件分享流程 (File Sharing) [新增]</h3>
+        <p>允许将已上传的文件生成公共访问链接：</p>
         <ol>
-            <li><b>获取元数据：</b> 请求接口获取目标文件的所有分块 URL 列表。</li>
-            <li><b>建立本地文件流：</b> 在本地磁盘创建空文件。</li>
-            <li><b>顺序拉取与写入：</b> 遍历分块 URL，依次下载每个分块的数据流，并追加写入到本地文件中。</li>
+            <li><b>生成分享：</b> 携带 Token 请求 <code>/api/share</code>，服务端生成唯一的 <code>shareId</code>。</li>
+            <li><b>访问链接：</b> 用户访问 <code>/share.html?id=SHARE_ID</code>，此页面无需登录。</li>
+            <li><b>读取元数据：</b> 分享页请求公共接口 <code>/api/public/share</code> 获取该文件的分块信息。</li>
+            <li><b>流式下载：</b> 分享页通过 <code>sw.js</code> 启动与主站相同的分块拼接下载逻辑。</li>
         </ol>
     </blockquote>
 
@@ -86,34 +84,35 @@
 ]
 </pre>
 
-        <h3>2. 保存文件元数据 (Save File Meta)</h3>
+        <h3>2. 创建分享链接 (Create Share) [新增]</h3>
         <ul>
-            <li><b>接口路径：</b> <code>/api/files</code></li>
+            <li><b>接口路径：</b> <code>/api/share</code></li>
             <li><b>请求方式：</b> <b>POST</b></li>
+            <li><b>鉴权：</b> 需要 Token</li>
         </ul>
-        <b>请求数据：</b>
+        <b>请求参数：</b>
 <pre>
 {
-  "filename": "project.zip",
-  "size": 5242880,
-  "chunks": ["url1", "url2"]
+  "fileId": "FILE_1714000000000"
 }
 </pre>
-
-        <h3>3. 获取上传签名 (Get OSS Signature)</h3>
-        <ul>
-            <li><b>接口路径：</b> <code>/api/signature</code></li>
-            <li><b>请求方式：</b> <b>GET</b></li>
-        </ul>
         <b>返回示例：</b>
 <pre>
 {
-  "accessKeyId": "LTAI5tXXXXXX",
-  "signature": "xxxxx...",
-  "policy": "ey...",
-  "host": "https://teachermate.oss-cn-qingdao.aliyuncs.com/"
+  "success": true,
+  "shareId": "a1b2c3d4",
+  "url": "/share.html?id=a1b2c3d4"
 }
 </pre>
+
+        <h3>3. 获取公共分享信息 (Get Public Share Info) [新增]</h3>
+        <ul>
+            <li><b>接口路径：</b> <code>/api/public/share</code></li>
+            <li><b>请求方式：</b> <b>GET</b></li>
+            <li><b>鉴权：</b> <b>无需 Token (公开)</b></li>
+        </ul>
+        <b>URL 参数：</b> <code>?id=a1b2c3d4</code>
+        <br><b>返回示例：</b> 返回该文件的原始元数据（filename, size, chunks）。
     </blockquote>
 
     <hr size="1" width="90%">
@@ -251,6 +250,17 @@ public class NexaboxDownloader
         
         Console.WriteLine($"文件合并下载成功！保存至：{savePath}");
     }
+}
+</pre>
+
+        <pre>
+// 示例：如何请求生成分享链接
+public async Task&lt;string&gt; GenerateShareLink(string fileId)
+{
+    var content = new StringContent(JsonSerializer.Serialize(new { fileId }), Encoding.UTF8, "application/json");
+    var response = await client.PostAsync($"{API_BASE}/api/share", content);
+    var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+    return result.GetProperty("url").GetString();
 }
 </pre>
 
