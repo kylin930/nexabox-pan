@@ -194,20 +194,42 @@
           }
       
       async function loadFiles() {
-          const res = await apiFetch('/api/files');
-          const files = await res.json();
-          const list = document.getElementById('fileList');
-          list.innerHTML = '';
-  
-          files.forEach(f => {
-              const li = document.createElement('li');
-              li.innerHTML = `
-                  <strong>${f.filename}</strong> (${(f.size/1024/1024).toFixed(2)} MB) 
-                  <button onclick="downloadStream('${f.id}')">流式下载</button>
-              `;
-              list.appendChild(li);
-          });
-      }
+            const res = await apiFetch('/api/files');
+            const files = await res.json();
+            const list = document.getElementById('fileList');
+            list.innerHTML = '';
+    
+            files.forEach(f => {
+                const li = document.createElement('li');
+                li.innerHTML = `
+                    <strong>${f.filename}</strong> (${(f.size/1024/1024).toFixed(2)} MB) 
+                    <button onclick="downloadStream('${f.id}')">流式下载</button>
+                    <button onclick="createShare('${f.id}')">生成分享链接</button> `;
+                list.appendChild(li);
+            });
+        }
+    
+        // 新增：调用后端生成分享链接
+        async function createShare(fileId) {
+            try {
+                const res = await apiFetch('/api/share', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fileId })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    const fullShareUrl = window.location.origin + data.url;
+                    // 简单地使用 prompt 让用户复制链接
+                    prompt("分享链接已生成，请复制：", fullShareUrl);
+                } else {
+                    alert("生成失败：" + (data.error || "未知错误"));
+                }
+            } catch (e) {
+                alert("请求分享接口失败！");
+            }
+        }
   
       async function downloadStream(fileId) {
           if (!navigator.serviceWorker.controller) {
