@@ -211,18 +211,26 @@
     
         // 新增：调用后端生成分享链接
         async function createShare(fileId) {
+            const pwdInput = prompt("请输入提取码（选填，留空则为公开分享）：");
+            if (pwdInput === null) return; // 用户点击了取消
+    
+            const password = pwdInput.trim();
+    
             try {
                 const res = await apiFetch('/api/share', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ fileId })
+                    body: JSON.stringify({ fileId, password })
                 });
                 const data = await res.json();
                 
                 if (data.success) {
                     const fullShareUrl = window.location.origin + data.url;
-                    // 简单地使用 prompt 让用户复制链接
-                    prompt("分享链接已生成，请复制：", fullShareUrl);
+                    let msg = `分享链接已生成：\n${fullShareUrl}`;
+                    if (password) {
+                        msg += `\n提取码：${password}`;
+                    }
+                    prompt("请复制分享信息：", msg);
                 } else {
                     alert("生成失败：" + (data.error || "未知错误"));
                 }
