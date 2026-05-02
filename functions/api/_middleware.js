@@ -3,7 +3,8 @@ export async function onRequest(context) {
   const { request, env, next } = context;
   const url = new URL(request.url);
 
-  if (url.pathname === '/api/update_jwt') {
+  // 放行更新 JWT 接口和所有公共接口 (如分享链接的数据获取)
+  if (url.pathname === '/api/update_jwt' || url.pathname.startsWith('/api/public/')) {
     return next();
   }
 
