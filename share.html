@@ -119,7 +119,7 @@
 
             // 视频预览
             if (/\.(mp4|webm|ogg|mov)$/.test(name)) {
-                previewArea.innerHTML = `<video controls src="${streamUrl}" poster="https://via.placeholder.com/800x450?text=Video+Loading..."></video>`;
+                previewArea.innerHTML = `<video controls src="${streamUrl}"></video>`;
             } 
             // 音频预览
             else if (/\.(mp3|wav|flac|aac)$/.test(name)) {
