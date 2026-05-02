@@ -2,88 +2,108 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>NexaboxDrive - 文件分享</title>
+    <title>NexaboxDrive - 文件预览与提取</title>
     <style>
-        body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; text-align: center; }
-        .card { border: 1px solid #ccc; padding: 30px; margin-top: 50px; border-radius: 10px; background-color: #fafafa; }
-        button { padding: 10px 20px; font-size: 16px; cursor: pointer; margin-top: 20px; }
-        #log { white-space: pre-wrap; background: #eee; padding: 10px; font-size: 12px; margin-top: 20px; text-align: left; display: none;}
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f7f9; padding: 20px; color: #333; }
+        .card { max-width: 800px; margin: 40px auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; }
+        .preview-container { margin-top: 20px; border-top: 1px solid #eee; padding-top: 20px; display: none; }
+        
+        /* 预览组件样式 */
+        video, audio { width: 100%; max-height: 450px; border-radius: 8px; background: #000; }
+        img { max-width: 100%; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+        pre { text-align: left; background: #272822; color: #f8f8f2; padding: 15px; border-radius: 8px; overflow-x: auto; font-size: 14px; line-height: 1.5; max-height: 500px; }
+        
+        .btn { padding: 10px 25px; font-size: 16px; cursor: pointer; border: none; border-radius: 6px; transition: 0.3s; margin: 10px; }
+        .btn-primary { background: #0078d4; color: white; }
+        .btn-primary:hover { background: #005a9e; }
+        input[type="text"] { padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px; width: 200px; text-align: center; }
+        #errorMsg { color: #d83b01; margin-top: 10px; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="card">
-        <h2>获取分享文件</h2>
-        <h3 id="filename" style="color: #333;">加载中...</h3>
-        <p id="filesize" style="color: #666;"></p>
-        <button id="downloadBtn" style="display: none;" onclick="startShareDownload()">开始下载</button>
-        <p id="errorMsg" style="color: red;"></p>
-        <div id="log"></div>
+        <h2>文件分享</h2>
+        <h3 id="filename">加载中...</h3>
+        <p id="filesize"></p>
+        
+        <div id="pwdContainer" style="display:none;">
+            <input type="text" id="pwdInput" placeholder="请输入提取码">
+            <br>
+            <button class="btn btn-primary" onclick="unlockShare()">验证并预览</button>
+        </div>
+
+        <div id="actionButtons" style="display:none;">
+            <button class="btn btn-primary" onclick="startShareDownload()">立即下载</button>
+            <div id="previewStatus">正在准备预览...</div>
+        </div>
+
+        <div id="previewArea" class="preview-container">
+            </div>
+
+        <p id="errorMsg"></p>
     </div>
 
     <script>
         let fileData = null;
+        const shareId = new URLSearchParams(window.location.search).get('id');
 
-        function log(msg) {
-            const logEl = document.getElementById('log');
-            logEl.style.display = 'block';
-            logEl.innerText += msg + '\n';
+        // 1. 初始化 SW
+        async function initSW() {
+            if (!('serviceWorker' in navigator)) return alert("浏览器不支持预览所需技术");
+            const reg = await navigator.serviceWorker.register('/sw.js');
+            await navigator.serviceWorker.ready;
         }
 
-        async function initServiceWorker() {
-            if ('serviceWorker' in navigator) {
-                try {
-                    await navigator.serviceWorker.register('/sw.js');
-                    if (!navigator.serviceWorker.controller) {
-                        await new Promise(resolve => {
-                            navigator.serviceWorker.addEventListener('controllerchange', resolve);
-                        });
-                    }
-                } catch (err) {
-                    document.getElementById('errorMsg').innerText = "您的浏览器不支持流式下载所需的环境。";
-                }
-            } else {
-                document.getElementById('errorMsg').innerText = "您的浏览器不支持 Service Worker。";
-            }
-        }
-        async function loadShareInfo() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const shareId = urlParams.get('id');
-            
-            if (!shareId) {
-                document.getElementById('errorMsg').innerText = "链接无效：缺少分享 ID";
-                document.getElementById('filename').innerText = "";
-                return;
-            }
-
+        // 2. 加载基础信息
+        async function loadInfo() {
             try {
                 const res = await fetch(`/api/public/share?id=${shareId}`);
                 const data = await res.json();
-
-                if (!res.ok) {
-                    throw new Error(data.error || "获取文件信息失败");
+                if (!res.ok) throw new Error(data.error);
+                
+                document.getElementById('filename').innerText = data.filename;
+                document.getElementById('filesize').innerText = `大小: ${(data.size/1024/1024).toFixed(2)} MB`;
+                
+                if (data.needPassword) {
+                    document.getElementById('pwdContainer').style.display = 'block';
+                } else {
+                    await fetchFullData(null);
                 }
-
-                fileData = data;
-                document.getElementById('filename').innerText = fileData.filename;
-                document.getElementById('filesize').innerText = `大小: ${(fileData.size / 1024 / 1024).toFixed(2)} MB`;
-                document.getElementById('downloadBtn').style.display = 'inline-block';
-
-            } catch (err) {
-                document.getElementById('errorMsg').innerText = err.message;
-                document.getElementById('filename').innerText = "文件已失效或不存在";
-            }
+            } catch (e) { document.getElementById('errorMsg').innerText = e.message; }
         }
 
-        function startShareDownload() {
-            if (!fileData) return;
-            if (!navigator.serviceWorker.controller) {
-                return alert("下载引擎未就绪，请刷新页面重试！");
-            }
+        async function unlockShare() {
+            const pwd = document.getElementById('pwdInput').value.trim();
+            await fetchFullData(pwd);
+        }
 
-            log(`准备下载: ${fileData.filename}`);
-            const taskId = `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+        async function fetchFullData(password) {
+            try {
+                const res = await fetch(`/api/public/share`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: shareId, password })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
+
+                fileData = data;
+                document.getElementById('pwdContainer').style.display = 'none';
+                document.getElementById('actionButtons').style.display = 'block';
+                
+                // 自动尝试预览
+                setupPreview();
+            } catch (e) { document.getElementById('errorMsg').innerText = e.message; }
+        }
+
+        // 3. 核心预览逻辑
+        async function setupPreview() {
+            const name = fileData.filename.toLowerCase();
+            const previewArea = document.getElementById('previewArea');
+            const status = document.getElementById('previewStatus');
             
-            // 向 SW 发送任务元数据
+            // 构造 SW 虚拟下载链接 (用于音视频流式播放)
+            const taskId = `preview_${Date.now()}`;
             navigator.serviceWorker.controller.postMessage({
                 type: 'PREPARE_DOWNLOAD',
                 id: taskId,
@@ -91,22 +111,59 @@
                 chunks: fileData.chunks,
                 size: fileData.size
             });
+            const streamUrl = `/virtual-download/${taskId}`;
 
-            log("正在唤起浏览器下载...");
+            previewArea.style.display = 'block';
+            status.innerText = "支持预览此类型文件";
 
-            setTimeout(() => {
-                const iframe = document.createElement('iframe');
-                iframe.style.display = 'none';
-                iframe.src = `/virtual-download/${taskId}`; 
-                document.body.appendChild(iframe);
-                
-                setTimeout(() => document.body.removeChild(iframe), 10000);
-            }, 300);
+            // 视频预览
+            if (/\.(mp4|webm|ogg|mov)$/.test(name)) {
+                previewArea.innerHTML = `<video controls src="${streamUrl}" poster="https://via.placeholder.com/800x450?text=Video+Loading..."></video>`;
+            } 
+            // 音频预览
+            else if (/\.(mp3|wav|flac|aac)$/.test(name)) {
+                previewArea.innerHTML = `<audio controls src="${streamUrl}"></audio>`;
+            } 
+            // 图片预览
+            else if (/\.(jpg|jpeg|png|gif|webp|svg)$/.test(name)) {
+                previewArea.innerHTML = `<img src="${streamUrl}" alt="Preview">`;
+            } 
+            // 文本预览 (txt, md)
+            else if (/\.(txt|md|js|css|json|cpp|py)$/.test(name)) {
+                try {
+                    status.innerText = "正在读取文本内容...";
+                    const textRes = await fetch(streamUrl);
+                    const content = await textRes.text();
+                    // 简单转义防止 XSS
+                    const safeContent = content.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                    previewArea.innerHTML = `<pre><code>${safeContent}</code></pre>`;
+                    status.innerText = "文本预览已就绪";
+                } catch (e) {
+                    status.innerText = "文本读取失败";
+                }
+            } 
+            else {
+                previewArea.style.display = 'none';
+                status.innerText = "此文件类型不支持在线预览，请下载后查看。";
+            }
+        }
+
+        // 下载逻辑
+        function startShareDownload() {
+            const taskId = `dl_${Date.now()}`;
+            navigator.serviceWorker.controller.postMessage({
+                type: 'PREPARE_DOWNLOAD', id: taskId,
+                filename: fileData.filename, chunks: fileData.chunks, size: fileData.size
+            });
+            const iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = `/virtual-download/${taskId}`;
+            document.body.appendChild(iframe);
         }
 
         window.onload = async () => {
-            await initServiceWorker();
-            await loadShareInfo();
+            await initSW();
+            await loadInfo();
         };
     </script>
 </body>
