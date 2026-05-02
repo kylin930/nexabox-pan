@@ -109,7 +109,8 @@
                 id: taskId,
                 filename: fileData.filename,
                 chunks: fileData.chunks,
-                size: fileData.size
+                size: fileData.size,
+                isPreview: true
             });
             const streamUrl = `/virtual-download/${taskId}`;
 
