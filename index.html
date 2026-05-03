@@ -236,12 +236,13 @@
                 if (f.isFolder) {
                     // 如果是文件夹，渲染为可点击的目录链接
                     li.innerHTML = `
-                        📁 <a class="folder-link" onclick="enterFolder('${f.filename}')">${f.filename}</a>
+                        <a class="folder-link" onclick="enterFolder('${f.filename}')">${f.filename}</a>
+                        <button style="margin-top:5px; margin-left:10px;" onclick="createShare('${f.id}')">生成分享链接</button>
                     `;
                 } else {
                     // 如果是文件，渲染常规下载与分享按钮
                     li.innerHTML = `
-                        📄 <strong>${f.filename}</strong> (${(f.size/1024/1024).toFixed(2)} MB) <br>
+                        <strong>${f.filename}</strong> (${(f.size/1024/1024).toFixed(2)} MB) <br>
                         <button style="margin-top:5px;" onclick="downloadStream('${f.id}')">流式下载</button>
                         <button style="margin-top:5px;" onclick="createShare('${f.id}')">生成分享链接</button> 
                     `;
