@@ -59,8 +59,13 @@
         <h3>2. 分块合并与流式下载 (Download Merging)</h3>
         <p>下载时不进行物理合并，通过 Service Worker 按顺序拉取分块流式写入。说明见 <code>sw.js</code>。</p>
 
-        <h3>3. 文件分享流程 (File Sharing)</h3>
-        <p>允许将已上传的文件生成公共访问链接。分享基于文件 ID，不受虚拟文件夹路径变动影响。</p>
+        <h3>3. 文件/文件夹分享流程 (Universal Sharing) <span class="new-tag">Update</span></h3>
+        <p>允许将文件或整个文件夹生成公共访问链接：</p>
+        <ol>
+            <li><b>统一生成：</b> 请求 <code>/api/share</code>，传入文件或文件夹的 <code>fileId</code>。</li>
+            <li><b>递归读取：</b> 如果分享的是文件夹，公共接口会自动扫描该路径下<b>所有层级</b>的子文件。</li>
+            <li><b>流式批量下载：</b> 分享页利用 <code>File System Access API</code> 结合 Service Worker，将递归获取到的文件流直接写入本地对应目录。</li>
+        </ol>
 
         <h3>4. 虚拟文件夹管理 (Virtual Folders) <span class="new-tag">New!</span></h3>
         <p>网盘不维护真实的物理目录结构，而是通过元数据中的 <code>path</code> 字段实现逻辑上的文件夹分类：</p>
@@ -142,6 +147,51 @@
   "password": "abcd" 
 }
 </pre>
+        <h3>1. 获取公共分享信息 (Get Public Share Info) <span class="new-tag">Update</span></h3>
+        <ul>
+            <li><b>接口路径：</b> <code>/api/public/share</code></li>
+            <li><b>请求方式：</b> <b>GET / POST</b></li>
+            <li><b>鉴权：</b> <b>无需 Token</b></li>
+        </ul>
+        
+        <p><b>Step 1: GET 探测 (查询基础信息)</b><br>
+        请求示例：<code>GET /api/public/share?id=a1b2c3d4</code></p>
+<pre>
+{
+  "filename": "我的照片墙",
+  "size": 0,
+  "isFolder": true,      // 标识是否为文件夹分享
+  "needPassword": true   // 是否需要提取码
+}
+</pre>
+
+        <p><b>Step 2: POST 验证 (获取完整数据)</b><br>
+        请求示例：<code>POST /api/public/share</code> 内容：<code>{"id":"a1b2c3d4", "password":"..."}</code></p>
+        
+        <b>如果是文件夹分享，返回示例：</b>
+<pre>
+{
+  "filename": "我的照片墙",
+  "isFolder": true,
+  "fullPath": "/photos/",  // 文件夹在网盘中的绝对路径
+  "children": [            // 递归包含的所有子项
+    {
+      "filename": "IMG_001.jpg",
+      "path": "/photos/2024/",
+      "size": 5242880,
+      "chunks": ["https://..."]
+    },
+    {
+      "filename": "假期作业.pdf",
+      "path": "/photos/",
+      "size": 1048576,
+      "chunks": ["https://..."]
+    }
+  ]
+}
+</pre>
+        <p><font color="#666666">* 注意：单文件分享的返回格式保持原有 1.3 版本结构，不再赘述。</font></p>
+    </blockquote>
     </blockquote>
 
     <hr size="1" width="90%">
