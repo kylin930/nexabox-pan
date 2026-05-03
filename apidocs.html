@@ -2,12 +2,19 @@
 <html>
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-    <title>NexaboxDrive API 接口文档 v1.3</title>
+    <title>NexaboxDrive API 接口文档 v1.4</title>
     <style>
         pre {
             border: 1px solid #000000;
             padding: 10px;
             font-family: "Courier New", Courier, monospace;
+            background-color: #fcfcfc;
+        }
+        .new-tag {
+            color: #d83b01;
+            font-weight: bold;
+            font-size: 0.8em;
+            vertical-align: super;
         }
     </style>
 </head>
@@ -15,7 +22,7 @@
 
     <center>
         <h1><font face="黑体" color="#000066">NexaboxDrive API 接口文档</font></h1>
-        <font size="2" color="#666666">内部版本 | <b>Web 1.0 兼容版</b> | v1.3 更新分享功能</font>
+        <font size="2" color="#666666">内部版本 | <b>Web 1.0 兼容版</b> | v1.4 更新文件夹支持</font>
     </center>
     
     <hr size="2" width="90%" noshade>
@@ -46,20 +53,22 @@
             <li><b>计算切片：</b> 按固定大小（250MB）划分分块。</li>
             <li><b>分块伪装：</b> 伪装成 <code>image/png</code> 格式以绕过限制。</li>
             <li><b>循环上传：</b> 获取 OSS 签名并 POST 二进制数据。</li>
-            <li><b>元数据提交：</b> 上传完成后提交分块 URL 数组至 <code>/api/files</code>。</li>
+            <li><b>元数据提交：</b> 上传完成后提交分块 URL 数组及<b>目标虚拟路径</b>至 <code>/api/files</code>。</li>
         </ol>
 
         <h3>2. 分块合并与流式下载 (Download Merging)</h3>
         <p>下载时不进行物理合并，通过 Service Worker 按顺序拉取分块流式写入。说明见 <code>sw.js</code>。</p>
 
-        <h3>3. 文件分享流程 (File Sharing) [新增]</h3>
-        <p>允许将已上传的文件生成公共访问链接：</p>
-        <ol>
-            <li><b>生成分享：</b> 携带 Token 请求 <code>/api/share</code>，服务端生成唯一的 <code>shareId</code>。</li>
-            <li><b>访问链接：</b> 用户访问 <code>/share.html?id=SHARE_ID</code>，此页面无需登录。</li>
-            <li><b>读取元数据：</b> 分享页请求公共接口 <code>/api/public/share</code> 获取该文件的分块信息。</li>
-            <li><b>流式下载：</b> 分享页通过 <code>sw.js</code> 启动与主站相同的分块拼接下载逻辑。</li>
-        </ol>
+        <h3>3. 文件分享流程 (File Sharing)</h3>
+        <p>允许将已上传的文件生成公共访问链接。分享基于文件 ID，不受虚拟文件夹路径变动影响。</p>
+
+        <h3>4. 虚拟文件夹管理 (Virtual Folders) <span class="new-tag">New!</span></h3>
+        <p>网盘不维护真实的物理目录结构，而是通过元数据中的 <code>path</code> 字段实现逻辑上的文件夹分类：</p>
+        <ul>
+            <li>文件夹也是一种特殊的元数据记录（包含 <code>isFolder: true</code> 标记）。</li>
+            <li>根目录路径固定为 <code>/</code>。</li>
+            <li>子目录路径格式示例：<code>/Documents/</code> 或 <code>/Photos/2026/</code>。</li>
+        </ul>
     </blockquote>
 
     <hr size="1" width="90%">
@@ -71,195 +80,102 @@
         <ul>
             <li><b>接口路径：</b> <code>/api/files</code></li>
             <li><b>请求方式：</b> <b>GET</b></li>
+            <li><b>查询参数：</b> <code>path</code> (可选，默认为 <code>/</code>)</li>
         </ul>
         <b>返回示例：</b>
 <pre>
 [
   {
-    "id": "FILE_1714000000000",
-    "filename": "backup.tar.gz",
-    "size": 1073741824,
-    "chunks": ["https://oss-url/part1", "https://oss-url/part2"]
+    "id": "FILE_DIR_1714000000000",
+    "filename": "我的文档",
+    "isFolder": true,
+    "path": "/",
+    "size": 0
+  },
+  {
+    "id": "FILE_1714000000001",
+    "filename": "readme.txt",
+    "size": 1024,
+    "path": "/",
+    "chunks": ["https://oss-url/part1"]
   }
 ]
 </pre>
 
-        <h3>2. 创建分享链接 (Create Share)</h3>
+        <h3>2. 创建文件夹 (Create Folder) <span class="new-tag">New!</span></h3>
+        <ul>
+            <li><b>接口路径：</b> <code>/api/folder</code></li>
+            <li><b>请求方式：</b> <b>POST</b></li>
+        </ul>
+        <b>请求参数：</b>
+<pre>
+{
+  "name": "新建文件夹",
+  "path": "/"  // 该文件夹所在的父级目录
+}
+</pre>
+
+        <h3>3. 保存文件元数据 (Save Metadata)</h3>
+        <ul>
+            <li><b>接口路径：</b> <code>/api/files</code></li>
+            <li><b>请求方式：</b> <b>POST</b></li>
+        </ul>
+        <b>请求参数：</b>
+<pre>
+{
+  "filename": "movie.mp4",
+  "size": 524288000,
+  "chunks": ["url1", "url2"],
+  "path": "/Movies/" // 文件所属的虚拟路径
+}
+</pre>
+
+        <h3>4. 创建分享链接 (Create Share)</h3>
         <ul>
             <li><b>接口路径：</b> <code>/api/share</code></li>
             <li><b>请求方式：</b> <b>POST</b></li>
-            <li><b>鉴权：</b> 需要 Token</li>
         </ul>
         <b>请求参数：</b>
 <pre>
 {
   "fileId": "FILE_1714000000000",
-  "password": "abcd" // 选填，留空则为公开分享
+  "password": "abcd" 
 }
 </pre>
-
-        <h3>3. 获取公共分享信息 (Get Public Share Info)</h3>
-        <ul>
-            <li><b>接口路径：</b> <code>/api/public/share</code></li>
-            <li><b>请求方式：</b> <b>GET / POST</b></li>
-            <li><b>鉴权：</b> <b>无需 Token (公开)</b></li>
-        </ul>
-        <b>流程说明：</b>
-        <ol>
-            <li>先发起 <b>GET</b> <code>?id=a1b2c3d4</code> 查询文件基础信息，返回：<code>{"filename":"...","size":123,"needPassword":true}</code></li>
-            <li>再发起 <b>POST</b> 提交验证数据：<code>{"id":"a1b2c3d4", "password":"abcd"}</code>，验证通过后才会返回包含 <code>chunks</code> 分片数组的完整元数据以供下载。</li>
-        </ol>
     </blockquote>
 
     <hr size="1" width="90%">
 
     <blockquote>
         <h2>四、 客户端接入示例 (C#)</h2>
-        <p><font color="#666666">以下示例基于 .NET 6+ 和 <code>System.Net.Http</code> 编写，展示了核心的上传和下载逻辑。</font></p>
 
-        <h3>1. C# 切片上传示例 (Chunked Upload)</h3>
+        <h3>1. C# 提交元数据示例 (含路径支持)</h3>
 <pre>
-using System;
-using System.IO;
-using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Text.Json;
-using System.Collections.Generic;
-using System.Threading.Tasks;
-
-public class NexaboxUploader
+// 在上传分片完成后，提交包含 path 的元数据
+var metaData = new
 {
-    private static readonly HttpClient client = new HttpClient();
-    private const string API_BASE = "https://drive.nexabox.de";
-    private const string TOKEN = "您的TOKEN";
-    private const int CHUNK_SIZE = 250 * 1024 * 1024; // 每个分块250MB
-
-    public static async Task UploadFileAsync(string filePath)
-    {
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", TOKEN);
-        
-        FileInfo fileInfo = new FileInfo(filePath);
-        string originalName = fileInfo.Name;
-        long totalSize = fileInfo.Length;
-        int totalChunks = (int)Math.Ceiling((double)totalSize / CHUNK_SIZE);
-        List&lt;string&gt; chunkUrls = new List&lt;string&gt;();
-
-        using (FileStream fs = new FileStream(filePath, FileMode.Open, FileAccess.Read))
-        {
-            for (int i = 0; i &lt; totalChunks; i++)
-            {
-                Console.WriteLine($"准备上传分片 {i + 1}/{totalChunks}...");
-                
-                // 1. 获取签名
-                var sigRes = await client.GetStringAsync($"{API_BASE}/api/signature");
-                var sigData = JsonDocument.Parse(sigRes).RootElement;
-                string ossHost = sigData.GetProperty("host").GetString();
-                string timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString();
-                
-                // 构造伪装文件名与 OSS Key
-                string fakeFileName = $"{originalName}.{i:D3}.png";
-                string nameWithoutExt = Path.GetFileNameWithoutExtension(fakeFileName);
-                string ossKey = $"{nameWithoutExt}-{timestamp}-{fakeFileName}";
-
-                // 2. 读取当前切片数据
-                int currentChunkSize = (int)Math.Min(CHUNK_SIZE, totalSize - (i * CHUNK_SIZE));
-                byte[] buffer = new byte[currentChunkSize];
-                await fs.ReadAsync(buffer, 0, currentChunkSize);
-
-                // 3. 构建表单直传 OSS
-                using (var content = new MultipartFormDataContent())
-                {
-                    content.Add(new StringContent(sigData.GetProperty("signature").GetString()), "Signature");
-                    content.Add(new StringContent(sigData.GetProperty("accessKeyId").GetString()), "OSSAccessKeyId");
-                    content.Add(new StringContent(sigData.GetProperty("policy").GetString()), "policy");
-                    content.Add(new StringContent("200"), "success_action_status");
-                    content.Add(new StringContent(ossKey), "key");
-
-                    var fileContent = new ByteArrayContent(buffer);
-                    fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse("image/png");
-                    content.Add(fileContent, "file", fakeFileName);
-
-                    var uploadRes = await client.PostAsync(ossHost, content);
-                    uploadRes.EnsureSuccessStatusCode();
-
-                    string finalUrl = $"{ossHost}{ossKey}";
-                    chunkUrls.Add(finalUrl);
-                    Console.WriteLine($"分片 {i + 1} 上传成功: {finalUrl}");
-                }
-            }
-        }
-
-        // 4. 提交文件元数据
-        var metaData = new
-        {
-            filename = originalName,
-            size = totalSize,
-            chunks = chunkUrls
-        };
-        var jsonContent = new StringContent(JsonSerializer.Serialize(metaData), System.Text.Encoding.UTF8, "application/json");
-        var metaRes = await client.PostAsync($"{API_BASE}/api/files", jsonContent);
-        
-        if (metaRes.IsSuccessStatusCode)
-            Console.WriteLine("文件元数据保存成功，上传完毕！");
-    }
-}
+    filename = originalName,
+    size = totalSize,
+    chunks = chunkUrls,
+    path = "/Backup/2026/" // 指定存储路径
+};
+var jsonContent = new StringContent(JsonSerializer.Serialize(metaData), Encoding.UTF8, "application/json");
+var metaRes = await client.PostAsync($"{API_BASE}/api/files", jsonContent);
 </pre>
 
-        <h3>2. C# 流式合并下载示例 (Stream Download)</h3>
+        <h3>2. C# 创建文件夹示例</h3>
 <pre>
-using System;
-using System.IO;
-using System.Net.Http;
-using System.Collections.Generic;
-using System.Threading.Tasks;
-
-public class NexaboxDownloader
+public async Task CreateFolderAsync(string folderName, string parentPath)
 {
-    private static readonly HttpClient client = new HttpClient();
-
-    // 假设已从 /api/files 获取到了对应的 chunk 列表和文件名
-    public static async Task DownloadFileAsync(string savePath, List&lt;string&gt; chunkUrls)
-    {
-        Console.WriteLine($"开始下载文件，共包含 {chunkUrls.Count} 个分片...");
-
-        // 使用 Append 模式打开或创建文件流
-        using (FileStream fs = new FileStream(savePath, FileMode.Append, FileAccess.Write, FileShare.None))
-        {
-            for (int i = 0; i &lt; chunkUrls.Count; i++)
-            {
-                string chunkUrl = chunkUrls[i];
-                Console.WriteLine($"正在拉取分片 {i + 1}/{chunkUrls.Count}...");
-
-                // 以流的方式获取响应
-                using (var response = await client.GetAsync(chunkUrl, HttpCompletionOption.ResponseHeadersRead))
-                {
-                    response.EnsureSuccessStatusCode();
-                    using (var stream = await response.Content.ReadAsStreamAsync())
-                    {
-                        // 将分片流直接复制到本地文件流中
-                        await stream.CopyToAsync(fs);
-                    }
-                }
-                Console.WriteLine($"分片 {i + 1} 写入完成。");
-            }
-        }
-        
-        Console.WriteLine($"文件合并下载成功！保存至：{savePath}");
-    }
+    var content = new StringContent(JsonSerializer.Serialize(new { 
+        name = folderName, 
+        path = parentPath 
+    }), Encoding.UTF8, "application/json");
+    
+    var response = await client.PostAsync($"{API_BASE}/api/folder", content);
+    response.EnsureSuccessStatusCode();
 }
 </pre>
-
-        <pre>
-// 示例：如何请求生成分享链接
-public async Task&lt;string&gt; GenerateShareLink(string fileId)
-{
-    var content = new StringContent(JsonSerializer.Serialize(new { fileId }), Encoding.UTF8, "application/json");
-    var response = await client.PostAsync($"{API_BASE}/api/share", content);
-    var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
-    return result.GetProperty("url").GetString();
-}
-</pre>
-
     </blockquote>
 
     <br><br>
