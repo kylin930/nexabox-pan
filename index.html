@@ -6,15 +6,26 @@
     <style>
         body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
         .card { border: 1px solid #ccc; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
-        button { padding: 8px 15px; cursor: pointer; }
+        button { padding: 8px 15px; cursor: pointer; margin-right: 5px; }
         #log { white-space: pre-wrap; background: #f4f4f4; padding: 10px; font-size: 12px; }
+        .folder-link { font-weight: bold; text-decoration: none; color: #0078d4; cursor: pointer; }
+        .folder-link:hover { text-decoration: underline; }
+        ul { list-style-type: none; padding-left: 0; }
+        li { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px dashed #eee; }
     </style>
 </head>
 <body>
     <h1>NexaboxDrive</h1>
 
+    <div class="card" style="background-color: #f9f9f9;">
+        <h3 style="margin-top: 0;">当前路径: <span id="pathDisplay">/</span></h3>
+        <button id="btnGoUp" onclick="goUp()" style="display: none;">返回上一级</button>
+        <button onclick="createFolder()">新建文件夹</button>
+        <button onclick="loadFiles()">刷新列表</button>
+    </div>
+
     <div class="card">
-        <h3>上传大文件</h3>
+        <h3>上传文件到当前目录</h3>
         <input type="file" id="fileInput" />
         <button onclick="startUpload()">开始切片上传</button>
         <p id="uploadStatus">就绪</p>
@@ -22,30 +33,30 @@
 
     <div class="card">
         <h3>文件列表</h3>
-        <button onclick="loadFiles()">刷新列表</button>
         <ul id="fileList"></ul>
     </div>
 
     <h4>运行日志</h4>
     <div id="log"></div>
+
   <script>
         const ACCOUNT_URL = 'https://accounts.nexabox.de'; 
         const APP_NAME = 'NexaboxDrive';
+        
+        // --- 新增：全局路径状态 ---
+        let currentPath = '/';
     
-        // 1. 检查并获取 Token
         function checkAuth() {
             const urlParams = new URLSearchParams(window.location.search);
             const tokenFromUrl = urlParams.get('token');
     
             if (tokenFromUrl) {
                 localStorage.setItem('pan_token', tokenFromUrl);
-                // 清理 URL 上的 token，保持页面美观
                 window.history.replaceState({}, document.title, window.location.pathname);
             }
     
             const token = localStorage.getItem('pan_token');
             if (!token) {
-                // 未登录，跳转到统一账号系统登录
                 const currentUrl = encodeURIComponent(window.location.href);
                 window.location.href = `${ACCOUNT_URL}/login.html?app=${APP_NAME}&redirect=${currentUrl}`;
                 return null;
@@ -55,10 +66,9 @@
     
         const token = checkAuth();
     
-        // 2. 封装带有身份验证的 API 请求函数
         async function apiFetch(url, options = {}) {
             if (!options.headers) options.headers = {};
-            options.headers['Authorization'] = `Bearer ${token}`; // 携带 Token
+            options.headers['Authorization'] = `Bearer ${token}`; 
             
             const res = await fetch(url, options);
             if (res.status === 401 || res.status === 403) {
@@ -69,7 +79,7 @@
             return res;
         }
       
-      const CHUNK_SIZE = 250 * 1024 * 1024; // 250MB
+      const CHUNK_SIZE = 250 * 1024 * 1024; 
       const OSS_BASE_URL = 'https://teachermate.oss-cn-qingdao.aliyuncs.com/';
   
       function log(msg) {
@@ -80,142 +90,170 @@
       async function initServiceWorker() {
           if ('serviceWorker' in navigator) {
               try {
-                  // 注册 sw.js
-                  const registration = await navigator.serviceWorker.register('/sw.js');
+                  await navigator.serviceWorker.register('/sw.js');
                   log("Service Worker 注册成功！");
-                  
-                  // 确保页面被 Service Worker 控制
                   if (!navigator.serviceWorker.controller) {
-                      log("正在等待 Service Worker 接管页面...");
-                      await new Promise(resolve => {
-                          navigator.serviceWorker.addEventListener('controllerchange', resolve);
-                      });
+                      await new Promise(resolve => navigator.serviceWorker.addEventListener('controllerchange', resolve));
                   }
-              } catch (err) {
-                  log(`Service Worker 注册失败: ${err}`);
-              }
-          } else {
-              log("您的浏览器不支持 Service Worker，流式下载将无法使用。");
+              } catch (err) { log(`Service Worker 注册失败: ${err}`); }
           }
       }
       
-      // 页面加载时执行
       window.onload = async () => {
           await initServiceWorker();
           loadFiles();
       };
   
-      // --- 1. 上传阶段 ---
-          async function startUpload() {
-              const fileInput = document.getElementById('fileInput');
-              if (!fileInput.files.length) return alert("请先选择一个文件！");
-              
-              const file = fileInput.files[0];
-              const originalName = file.name;
-              const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-              const chunkUrls = [];
-  
-              log(`开始处理: ${originalName}, 大小: ${(file.size/1024/1024).toFixed(2)} MB, 共 ${totalChunks} 块`);
-              document.getElementById('uploadStatus').innerText = `正在上传... (0/${totalChunks})`;
-  
-              for (let i = 0; i < totalChunks; i++) {
-                  // 1.1 切片 (瞬间完成)
-                  const start = i * CHUNK_SIZE;
-                  const end = Math.min(start + CHUNK_SIZE, file.size);
-                  //const chunkBlob = file.slice(start, end);
-                  const chunkBlob = file.slice(start, end, 'image/png');
-                  
-                  // 伪装文件名，例如: movie.mp4.001.png
-                  const chunkIndex = String(i + 1).padStart(3, '0');
-                  const fakeFileName = `${originalName}.${chunkIndex}.png`;
-                  
-                  log(`[分块 ${i+1}/${totalChunks}] 准备上传伪装文件: ${fakeFileName}`);
-  
-                  try {
-                      // 1.2 向 Cloudflare API 获取签名
-                      const sigRes = await apiFetch('/api/signature');
-                      const ossData = await sigRes.json();
-                      if (!ossData.signature) throw new Error("获取签名失败");
-  
-                      // 1.3 生成符合规则的 OSS Key
-                      const timestamp = new Date().getTime();
-                      // 去除后缀的名称
-                      const nameWithoutExt = fakeFileName.substring(0, fakeFileName.lastIndexOf('.')); 
-                      const ossKey = `${nameWithoutExt}-${timestamp}-${fakeFileName}`;
-  
-                      // 1.4 构造 FormData (将你的 Python 逻辑转化为 JS)
-                      const formData = new FormData();
-                      formData.append('Signature', ossData.signature);
-                      formData.append('OSSAccessKeyId', ossData.accessKeyId);
-                      formData.append('policy', ossData.policy);
-                      formData.append('success_action_status', '200');
-                      formData.append('key', ossKey);
-                      
-                      // 将 Blob 附加到表单，必须指定 fakeFileName，且 MIME type 设为 image/png
-                      formData.append('file', chunkBlob, fakeFileName);
-  
-                      // 1.5 直传 OSS
-                      const ossHost = ossData.host || OSS_BASE_URL;
-                      const uploadRes = await apiFetch(ossHost, {
-                          method: 'POST',
-                          body: formData
-                      });
-  
-                      if (uploadRes.status === 200 || uploadRes.status === 204) {
-                          const finalUrl = `${OSS_BASE_URL}${ossKey}`;
-                          chunkUrls.push(finalUrl);
-                          log(`[分块 ${i+1} 成功] -> ${finalUrl}`);
-                          document.getElementById('uploadStatus').innerText = `正在上传... (${i+1}/${totalChunks})`;
-                      } else {
-                          throw new Error(`OSS 上传失败，状态码: ${uploadRes.status}`);
-                      }
-  
-                  } catch (e) {
-                      log(`[错误] 分块 ${i+1} 上传中断: ${e.message}`);
-                      document.getElementById('uploadStatus').innerText = "上传失败，请查看日志";
-                      return;
-                  }
-              }
-  
-              // 1.6 上传全部完成后，把元数据保存到 Cloudflare KV
-              log("所有分块上传完毕，正在保存元数据...");
-              await apiFetch('/api/files', {
+      // --- 文件夹与路径导航逻辑 ---
+      
+      async function createFolder() {
+          const folderName = prompt("请输入文件夹名称：");
+          if (!folderName) return;
+          
+          try {
+              const res = await apiFetch('/api/folder', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                      filename: originalName,
-                      size: file.size,
-                      chunks: chunkUrls
-                  })
+                  body: JSON.stringify({ name: folderName, path: currentPath })
               });
-  
-              document.getElementById('uploadStatus').innerText = "上传完成！";
-              loadFiles(); // 刷新列表
+              const data = await res.json();
+              if (data.success) {
+                  log(`文件夹 ${folderName} 创建成功`);
+                  loadFiles();
+              } else {
+                  alert(data.error);
+              }
+          } catch (e) { alert("创建文件夹失败"); }
+      }
+
+      function enterFolder(folderName) {
+          if (currentPath === '/') {
+              currentPath = `/${folderName}/`;
+          } else {
+              currentPath = `${currentPath}${folderName}/`;
           }
+          loadFiles();
+      }
+
+      function goUp() {
+          if (currentPath === '/') return;
+          const parts = currentPath.split('/').filter(p => p !== '');
+          parts.pop(); // 弹出当前目录
+          currentPath = parts.length === 0 ? '/' : '/' + parts.join('/') + '/';
+          loadFiles();
+      }
+
+      // --- 文件上传逻辑 ---
+      async function startUpload() {
+          const fileInput = document.getElementById('fileInput');
+          if (!fileInput.files.length) return alert("请先选择一个文件！");
+          
+          const file = fileInput.files[0];
+          const originalName = file.name;
+          const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+          const chunkUrls = [];
+  
+          log(`开始上传到 ${currentPath} : ${originalName}`);
+          document.getElementById('uploadStatus').innerText = `正在上传... (0/${totalChunks})`;
+  
+          for (let i = 0; i < totalChunks; i++) {
+              const start = i * CHUNK_SIZE;
+              const end = Math.min(start + CHUNK_SIZE, file.size);
+              const chunkBlob = file.slice(start, end, 'image/png');
+              
+              const chunkIndex = String(i + 1).padStart(3, '0');
+              const fakeFileName = `${originalName}.${chunkIndex}.png`;
+              
+              try {
+                  const sigRes = await apiFetch('/api/signature');
+                  const ossData = await sigRes.json();
+                  if (!ossData.signature) throw new Error("获取签名失败");
+  
+                  const timestamp = new Date().getTime();
+                  const nameWithoutExt = fakeFileName.substring(0, fakeFileName.lastIndexOf('.')); 
+                  const ossKey = `${nameWithoutExt}-${timestamp}-${fakeFileName}`;
+  
+                  const formData = new FormData();
+                  formData.append('Signature', ossData.signature);
+                  formData.append('OSSAccessKeyId', ossData.accessKeyId);
+                  formData.append('policy', ossData.policy);
+                  formData.append('success_action_status', '200');
+                  formData.append('key', ossKey);
+                  formData.append('file', chunkBlob, fakeFileName);
+  
+                  const ossHost = ossData.host || OSS_BASE_URL;
+                  const uploadRes = await apiFetch(ossHost, { method: 'POST', body: formData });
+  
+                  if (uploadRes.status === 200 || uploadRes.status === 204) {
+                      chunkUrls.push(`${OSS_BASE_URL}${ossKey}`);
+                      document.getElementById('uploadStatus').innerText = `正在上传... (${i+1}/${totalChunks})`;
+                  } else {
+                      throw new Error(`OSS 上传失败: ${uploadRes.status}`);
+                  }
+              } catch (e) {
+                  log(`[错误] 分块上传中断: ${e.message}`);
+                  document.getElementById('uploadStatus').innerText = "上传失败";
+                  return;
+              }
+          }
+  
+          // 保存元数据，携带 path
+          await apiFetch('/api/files', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  filename: originalName,
+                  size: file.size,
+                  chunks: chunkUrls,
+                  path: currentPath // 注入当前目录
+              })
+          });
+  
+          document.getElementById('uploadStatus').innerText = "上传完成！";
+          loadFiles(); 
+      }
       
+      // --- 加载文件列表 ---
       async function loadFiles() {
-            const res = await apiFetch('/api/files');
+            // 更新 UI 状态
+            document.getElementById('pathDisplay').innerText = currentPath;
+            document.getElementById('btnGoUp').style.display = currentPath === '/' ? 'none' : 'inline-block';
+
+            // 带上 path 过滤参数
+            const res = await apiFetch(`/api/files?path=${encodeURIComponent(currentPath)}`);
             const files = await res.json();
             const list = document.getElementById('fileList');
             list.innerHTML = '';
+            
+            if (files.length === 0) {
+                list.innerHTML = '<li style="color: #999;">当前目录为空</li>';
+                return;
+            }
     
             files.forEach(f => {
                 const li = document.createElement('li');
-                li.innerHTML = `
-                    <strong>${f.filename}</strong> (${(f.size/1024/1024).toFixed(2)} MB) 
-                    <button onclick="downloadStream('${f.id}')">流式下载</button>
-                    <button onclick="createShare('${f.id}')">生成分享链接</button> `;
+                
+                if (f.isFolder) {
+                    // 如果是文件夹，渲染为可点击的目录链接
+                    li.innerHTML = `
+                        📁 <a class="folder-link" onclick="enterFolder('${f.filename}')">${f.filename}</a>
+                    `;
+                } else {
+                    // 如果是文件，渲染常规下载与分享按钮
+                    li.innerHTML = `
+                        📄 <strong>${f.filename}</strong> (${(f.size/1024/1024).toFixed(2)} MB) <br>
+                        <button style="margin-top:5px;" onclick="downloadStream('${f.id}')">流式下载</button>
+                        <button style="margin-top:5px;" onclick="createShare('${f.id}')">生成分享链接</button> 
+                    `;
+                }
                 list.appendChild(li);
             });
         }
     
-        // 新增：调用后端生成分享链接
         async function createShare(fileId) {
             const pwdInput = prompt("请输入提取码（选填，留空则为公开分享）：");
-            if (pwdInput === null) return; // 用户点击了取消
-    
+            if (pwdInput === null) return; 
             const password = pwdInput.trim();
-    
             try {
                 const res = await apiFetch('/api/share', {
                     method: 'POST',
@@ -223,58 +261,41 @@
                     body: JSON.stringify({ fileId, password })
                 });
                 const data = await res.json();
-                
                 if (data.success) {
                     const fullShareUrl = window.location.origin + data.url;
                     let msg = `分享链接已生成：\n${fullShareUrl}`;
-                    if (password) {
-                        msg += `\n提取码：${password}`;
-                    }
+                    if (password) msg += `\n提取码：${password}`;
                     prompt("请复制分享信息：", msg);
                 } else {
                     alert("生成失败：" + (data.error || "未知错误"));
                 }
-            } catch (e) {
-                alert("请求分享接口失败！");
-            }
+            } catch (e) { alert("请求分享接口失败！"); }
         }
   
       async function downloadStream(fileId) {
-          if (!navigator.serviceWorker.controller) {
-              return alert("Service Worker 未就绪，请刷新页面重试！");
-          }
-  
-          log(`准备流式下载... 读取元数据 ID: ${fileId}`);
+          if (!navigator.serviceWorker.controller) return alert("Service Worker 未就绪，请刷新重试！");
           
-          const res = await apiFetch('/api/files');
+          // 在带有 path 的情况下，后端需要从全量列表中去找该文件，为了安全和效率，这里我们仍然复用之前的数据
+          // 因为列表数据只包含当前目录，我们可以在内存中查找当前目录的渲染数据
+          const res = await apiFetch(`/api/files?path=${encodeURIComponent(currentPath)}`);
           const files = await res.json();
           const fileData = files.find(f => f.id === fileId);
   
           if (!fileData) return alert("文件数据丢失");
   
           const taskId = `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-          
           navigator.serviceWorker.controller.postMessage({
-              type: 'PREPARE_DOWNLOAD',
-              id: taskId,
-              filename: fileData.filename,
-              chunks: fileData.chunks,
-              size: fileData.size
+              type: 'PREPARE_DOWNLOAD', id: taskId,
+              filename: fileData.filename, chunks: fileData.chunks, size: fileData.size
           });
   
           log("唤起浏览器下载引擎...");
-  
           setTimeout(() => {
               const iframe = document.createElement('iframe');
               iframe.style.display = 'none';
-              // 访问约定的虚拟路径
               iframe.src = `/virtual-download/${taskId}`; 
               document.body.appendChild(iframe);
-              
-              // 可选：几秒钟后清理掉这个无用的 iframe
-              setTimeout(() => {
-                  document.body.removeChild(iframe);
-              }, 10000);
+              setTimeout(() => { document.body.removeChild(iframe); }, 10000);
           }, 300);
       }
   </script>
