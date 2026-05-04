@@ -5,43 +5,63 @@ export async function onRequest(context) {
   const url = new URL(request.url);
 
   if (request.method === "POST") {
-    // 前端上传完毕后，提交文件名和它的所有分块 URL，新增 path 字段
-    const fileData = await request.json(); 
-    
-    // 确保 fileData 中包含 path 字段，如果前端没传，默认挂载在根目录 '/'
-    fileData.path = fileData.path || "/";
-    
-    const fileId = "FILE_" + Date.now();
-    await env.TEACHERMATE_OSS_KV.put(fileId, JSON.stringify(fileData));
-    return new Response(JSON.stringify({ success: true, fileId }));
+    try {
+      const fileData = await request.json(); 
+      
+      fileData.path = fileData.path || "/";
+      fileData.isFolder = !!fileData.isFolder; 
+      
+      const fileId = "FILE_" + Date.now();
+      await env.TEACHERMATE_OSS_KV.put(fileId, JSON.stringify(fileData));
+      return new Response(JSON.stringify({ success: true, fileId }));
+    } catch (e) {
+      // 防止 POST 畸形 JSON 导致崩溃
+      return new Response(JSON.stringify({ error: "Invalid JSON data" }), { status: 400 });
+    }
   } 
   
   if (request.method === "GET") {
-    // 接收 URL 上的 path 参数，例如 /api/files?path=/photos
-    const targetPath = url.searchParams.get("path") || "/";
-    
-    // 列出所有带有 FILE_ 前缀的键（包含普通文件和文件夹）
-    const list = await env.TEACHERMATE_OSS_KV.list({ prefix: "FILE_" });
-    let files = [];
-    
-    for (const key of list.keys) {
-      const dataStr = await env.TEACHERMATE_OSS_KV.get(key.name);
-      if (dataStr) {
-        const itemData = JSON.parse(dataStr);
-        const itemPath = itemData.path || "/";
-        
-        if (itemPath === targetPath) {
-          files.push({ id: key.name, ...itemData });
+    try {
+      const targetPath = url.searchParams.get("path") || "/";
+      const list = await env.TEACHERMATE_OSS_KV.list({ prefix: "FILE_" });
+      let files = [];
+      
+      for (const key of list.keys) {
+        const dataStr = await env.TEACHERMATE_OSS_KV.get(key.name);
+        if (dataStr) {
+          try {
+            const itemData = JSON.parse(dataStr);
+            
+            itemData.path = itemData.path || "/";
+            itemData.isFolder = !!itemData.isFolder;
+            
+            if (itemData.path === targetPath) {
+              files.push({ id: key.name, ...itemData });
+            }
+          } catch (parseError) {
+            // 【修复1】静默捕获 JSON 解析错误，跳过这条坏数据，而不是让整个接口崩溃
+            console.error(`跳过解析失败的 KV 键: ${key.name}`);
+            continue;
+          }
         }
       }
-    }
-    
-    files.sort((a, b) => {
-      if (a.isFolder && !b.isFolder) return -1;
-      if (!a.isFolder && b.isFolder) return 1;
-      return a.filename.localeCompare(b.filename);
-    });
+      
+      files.sort((a, b) => {
+        if (a.isFolder && !b.isFolder) return -1;
+        if (!a.isFolder && b.isFolder) return 1;
+        
+        // 【修复2】加入防御性空值兜底，防止 a.filename 或 b.filename 为 undefined 导致 localeCompare 崩溃
+        const nameA = a.filename || "";
+        const nameB = b.filename || "";
+        return nameA.localeCompare(nameB);
+      });
 
-    return new Response(JSON.stringify(files), { headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify(files), { headers: { "Content-Type": "application/json" } });
+    } catch (error) {
+      return new Response(JSON.stringify({ error: "Internal Server Error" }), { status: 500 });
+    }
   }
+
+  // 【修复3】兜底返回，防止 OPTIONS 或其他请求方式导致函数返回 undefined 而触发 1101 错误
+  return new Response("Method not allowed", { status: 405 });
 }
