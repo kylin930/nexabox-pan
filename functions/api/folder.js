@@ -1,30 +1,47 @@
-// functions/api/folder.js
-export async function onRequestPost(context) {
+// functions/api/files.js
+// GET 获取指定路径下的文件列表，POST 保存新文件
+export async function onRequest(context) {
   const { request, env } = context;
-  try {
-    const { name, path = "/" } = await request.json();
-    
-    if (!name) {
-      return new Response(JSON.stringify({ error: "文件夹名称不能为空" }), { status: 400, headers: { "Content-Type": "application/json" } });
-    }
+  const url = new URL(request.url);
 
-    // 同样使用 FILE_ 前缀，保证 files.js 能统一读取到
-    // 利用 isFolder: true 来让前端区分它是文件夹而不是普通文件
-    const folderId = "FILE_DIR_" + Date.now();
-    const folderData = {
-      filename: name,
-      isFolder: true,
-      path: path, // 这个文件夹所在的路径（例如根目录就是 "/"）
-      size: 0
-    };
+  if (request.method === "POST") {
+    const fileData = await request.json(); 
     
-    await env.TEACHERMATE_OSS_KV.put(folderId, JSON.stringify(folderData));
+    // 【修复】存入前统一格式，确保新写入的数据一定包含这两个字段
+    fileData.path = fileData.path || "/";
+    fileData.isFolder = !!fileData.isFolder; 
     
-    return new Response(JSON.stringify({ success: true, folderId }), { 
-      headers: { "Content-Type": "application/json" } 
+    const fileId = "FILE_" + Date.now();
+    await env.TEACHERMATE_OSS_KV.put(fileId, JSON.stringify(fileData));
+    return new Response(JSON.stringify({ success: true, fileId }));
+  } 
+  
+  if (request.method === "GET") {
+    const targetPath = url.searchParams.get("path") || "/";
+    const list = await env.TEACHERMATE_OSS_KV.list({ prefix: "FILE_" });
+    let files = [];
+    
+    for (const key of list.keys) {
+      const dataStr = await env.TEACHERMATE_OSS_KV.get(key.name);
+      if (dataStr) {
+        const itemData = JSON.parse(dataStr);
+        
+        // 【修复核心】向前端返回前，强制补全旧数据缺失的字段并规范类型
+        itemData.path = itemData.path || "/";
+        itemData.isFolder = !!itemData.isFolder;
+        
+        if (itemData.path === targetPath) {
+          files.push({ id: key.name, ...itemData });
+        }
+      }
+    }
+    
+    files.sort((a, b) => {
+      if (a.isFolder && !b.isFolder) return -1;
+      if (!a.isFolder && b.isFolder) return 1;
+      return a.filename.localeCompare(b.filename);
     });
 
-  } catch (error) {
-    return new Response(JSON.stringify({ error: "内部错误" }), { status: 500 });
+    return new Response(JSON.stringify(files), { headers: { "Content-Type": "application/json" } });
   }
 }
