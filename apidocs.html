@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-    <title>NexaboxDrive API 接口文档 v1.4</title>
+    <title>NexaboxDrive API 接口文档 v1.5</title>
     <style>
         pre {
             border: 1px solid #000000;
@@ -22,7 +22,7 @@
 
     <center>
         <h1><font face="黑体" color="#000066">NexaboxDrive API 接口文档</font></h1>
-        <font size="2" color="#666666">内部版本 | <b>Web 1.0 兼容版</b> | v1.4 更新文件夹支持</font>
+        <font size="2" color="#666666">内部版本 | <b>Web 1.0 兼容版</b> | v1.5 批量上传与搜索支持</font>
     </center>
     
     <hr size="2" width="90%" noshade>
@@ -47,33 +47,22 @@
     <blockquote>
         <h2>二、 核心流程详细说明</h2>
 
-        <h3>1. 大文件切片上传步骤 (Upload Chunking)</h3>
-        <p>系统采用前端切片直传 OSS 的方案：</p>
-        <ol>
-            <li><b>计算切片：</b> 按固定大小（250MB）划分分块。</li>
-            <li><b>分块伪装：</b> 伪装成 <code>image/png</code> 格式以绕过限制。</li>
-            <li><b>循环上传：</b> 获取 OSS 签名并 POST 二进制数据。</li>
-            <li><b>元数据提交：</b> 上传完成后提交分块 URL 数组及<b>目标虚拟路径</b>至 <code>/api/files</code>。</li>
-        </ol>
-
-        <h3>2. 分块合并与流式下载 (Download Merging)</h3>
-        <p>下载时不进行物理合并，通过 Service Worker 按顺序拉取分块流式写入。说明见 <code>sw.js</code>。</p>
-
-        <h3>3. 文件/文件夹分享流程 (Universal Sharing) <span class="new-tag">Update</span></h3>
-        <p>允许将文件或整个文件夹生成公共访问链接：</p>
-        <ol>
-            <li><b>统一生成：</b> 请求 <code>/api/share</code>，传入文件或文件夹的 <code>fileId</code>。</li>
-            <li><b>递归读取：</b> 如果分享的是文件夹，公共接口会自动扫描该路径下<b>所有层级</b>的子文件。</li>
-            <li><b>流式批量下载：</b> 分享页利用 <code>File System Access API</code> 结合 Service Worker，将递归获取到的文件流直接写入本地对应目录。</li>
-        </ol>
-
-        <h3>4. 虚拟文件夹管理 (Virtual Folders) <span class="new-tag">New!</span></h3>
-        <p>网盘不维护真实的物理目录结构，而是通过元数据中的 <code>path</code> 字段实现逻辑上的文件夹分类：</p>
+        <h3>1. 批量与文件夹上传 (Batch & Folder Upload) <span class="new-tag">Update</span></h3>
+        <p>前端通过解析 <code>webkitRelativePath</code> 实现保留层级的上传：</p>
         <ul>
-            <li>文件夹也是一种特殊的元数据记录（包含 <code>isFolder: true</code> 标记）。</li>
-            <li>根目录路径固定为 <code>/</code>。</li>
-            <li>子目录路径格式示例：<code>/Documents/</code> 或 <code>/Photos/2026/</code>。</li>
+            <li><b>递归建权：</b> 若上传的是文件夹，前端会自动检查并调用 <code>/api/folder</code> 逐级创建虚拟目录。</li>
+            <li><b>并发上传：</b> 多个文件可以并发执行切片上传流程，每个文件上传完成后独立提交元数据。</li>
         </ul>
+
+        <h3>2. 字段统一规范 (Data Consistency) <span class="new-tag">New!</span></h3>
+        <p>为保证前端渲染稳定性，所有文件/目录对象<b>必须</b>包含以下字段：</p>
+        <ul>
+            <li><code>isFolder</code>: 布尔值，标识是否为文件夹。</li>
+            <li><code>path</code>: 字符串，标识所属的绝对父级虚拟路径（如 <code>/Photos/</code>）。</li>
+        </ul>
+
+        <h3>3. 全局搜索逻辑 (Global Search) <span class="new-tag">New!</span></h3>
+        <p>搜索接口会对所有 <code>FILE_</code> 前缀的 KV 记录进行全量扫描，匹配文件名中的关键字（不区分大小写），并返回跨目录的匹配结果。</p>
     </blockquote>
 
     <hr size="1" width="90%">
@@ -81,117 +70,51 @@
     <blockquote>
         <h2>三、 接口列表</h2>
 
-        <h3>1. 获取文件列表 (List Files)</h3>
+        <h3>1. 全局搜索 (Search Files) <span class="new-tag">New!</span></h3>
         <ul>
-            <li><b>接口路径：</b> <code>/api/files</code></li>
+            <li><b>接口路径：</b> <code>/api/search</code></li>
             <li><b>请求方式：</b> <b>GET</b></li>
-            <li><b>查询参数：</b> <code>path</code> (可选，默认为 <code>/</code>)</li>
+            <li><b>查询参数：</b> <code>keyword</code> (必填，搜索关键字)</li>
         </ul>
         <b>返回示例：</b>
 <pre>
 [
   {
-    "id": "FILE_DIR_1714000000000",
-    "filename": "我的文档",
-    "isFolder": true,
-    "path": "/",
-    "size": 0
-  },
-  {
     "id": "FILE_1714000000001",
-    "filename": "readme.txt",
-    "size": 1024,
-    "path": "/",
-    "chunks": ["https://oss-url/part1"]
+    "filename": "工作报告_2024.pdf",
+    "isFolder": false,
+    "path": "/Documents/Work/",
+    "size": 204800,
+    "chunks": ["..."]
   }
 ]
 </pre>
 
-        <h3>2. 创建文件夹 (Create Folder) <span class="new-tag">New!</span></h3>
+        <h3>2. 获取文件列表 (List Files)</h3>
+        <ul>
+            <li><b>接口路径：</b> <code>/api/files</code></li>
+            <li><b>请求方式：</b> <b>GET</b></li>
+            <li><b>查询参数：</b> <code>path</code> (可选，默认为 <code>/</code>)</li>
+        </ul>
+
+        <h3>3. 创建文件夹 (Create Folder)</h3>
         <ul>
             <li><b>接口路径：</b> <code>/api/folder</code></li>
             <li><b>请求方式：</b> <b>POST</b></li>
         </ul>
-        <b>请求参数：</b>
-<pre>
-{
-  "name": "新建文件夹",
-  "path": "/"  // 该文件夹所在的父级目录
-}
-</pre>
-
-        <h3>3. 保存文件元数据 (Save Metadata)</h3>
-        <ul>
-            <li><b>接口路径：</b> <code>/api/files</code></li>
-            <li><b>请求方式：</b> <b>POST</b></li>
-        </ul>
-        <b>请求参数：</b>
-<pre>
-{
-  "filename": "movie.mp4",
-  "size": 524288000,
-  "chunks": ["url1", "url2"],
-  "path": "/Movies/" // 文件所属的虚拟路径
-}
-</pre>
 
         <h3>4. 创建分享链接 (Create Share)</h3>
         <ul>
             <li><b>接口路径：</b> <code>/api/share</code></li>
             <li><b>请求方式：</b> <b>POST</b></li>
         </ul>
-        <b>请求参数：</b>
-<pre>
-{
-  "fileId": "FILE_1714000000000",
-  "password": "abcd" 
-}
-</pre>
-        <h3>1. 获取公共分享信息 (Get Public Share Info) <span class="new-tag">Update</span></h3>
+
+        <h3>5. 获取公共分享信息 (Get Public Share Info)</h3>
         <ul>
             <li><b>接口路径：</b> <code>/api/public/share</code></li>
             <li><b>请求方式：</b> <b>GET / POST</b></li>
-            <li><b>鉴权：</b> <b>无需 Token</b></li>
+            <li><b>说明：</b> POST 验证后，若为文件夹则返回 <code>children</code> 数组，且每个子项均包含规范化的 <code>path</code> 与 <code>isFolder</code> 字段。</li>
         </ul>
-        
-        <p><b>Step 1: GET 探测 (查询基础信息)</b><br>
-        请求示例：<code>GET /api/public/share?id=a1b2c3d4</code></p>
-<pre>
-{
-  "filename": "我的照片墙",
-  "size": 0,
-  "isFolder": true,      // 标识是否为文件夹分享
-  "needPassword": true   // 是否需要提取码
-}
-</pre>
-
-        <p><b>Step 2: POST 验证 (获取完整数据)</b><br>
-        请求示例：<code>POST /api/public/share</code> 内容：<code>{"id":"a1b2c3d4", "password":"..."}</code></p>
-        
-        <b>如果是文件夹分享，返回示例：</b>
-<pre>
-{
-  "filename": "我的照片墙",
-  "isFolder": true,
-  "fullPath": "/photos/",  // 文件夹在网盘中的绝对路径
-  "children": [            // 递归包含的所有子项
-    {
-      "filename": "IMG_001.jpg",
-      "path": "/photos/2024/",
-      "size": 5242880,
-      "chunks": ["https://..."]
-    },
-    {
-      "filename": "假期作业.pdf",
-      "path": "/photos/",
-      "size": 1048576,
-      "chunks": ["https://..."]
-    }
-  ]
-}
-</pre>
-        <p><font color="#666666">* 注意：单文件分享的返回格式保持原有 1.3 版本结构，不再赘述。</font></p>
-    </blockquote>
     </blockquote>
 
     <hr size="1" width="90%">
@@ -199,31 +122,14 @@
     <blockquote>
         <h2>四、 客户端接入示例 (C#)</h2>
 
-        <h3>1. C# 提交元数据示例 (含路径支持)</h3>
+        <h3>1. C# 全局搜索示例</h3>
 <pre>
-// 在上传分片完成后，提交包含 path 的元数据
-var metaData = new
+public async Task&lt;List&lt;FileItem&gt;&gt; SearchAsync(string keyword)
 {
-    filename = originalName,
-    size = totalSize,
-    chunks = chunkUrls,
-    path = "/Backup/2026/" // 指定存储路径
-};
-var jsonContent = new StringContent(JsonSerializer.Serialize(metaData), Encoding.UTF8, "application/json");
-var metaRes = await client.PostAsync($"{API_BASE}/api/files", jsonContent);
-</pre>
-
-        <h3>2. C# 创建文件夹示例</h3>
-<pre>
-public async Task CreateFolderAsync(string folderName, string parentPath)
-{
-    var content = new StringContent(JsonSerializer.Serialize(new { 
-        name = folderName, 
-        path = parentPath 
-    }), Encoding.UTF8, "application/json");
-    
-    var response = await client.PostAsync($"{API_BASE}/api/folder", content);
+    var response = await client.GetAsync($"{API_BASE}/api/search?keyword={Uri.EscapeDataString(keyword)}");
     response.EnsureSuccessStatusCode();
+    var json = await response.Content.ReadAsStringAsync();
+    return JsonSerializer.Deserialize&lt;List&lt;FileItem&gt;&gt;(json);
 }
 </pre>
     </blockquote>
