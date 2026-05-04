@@ -140,14 +140,14 @@
       }
 
       function enterFolder(folderName, forcePath = null) {
-          // 如果是从全局搜索中点击进来的，使用它强制传过来的绝对父级路径
-          if (forcePath) {
-              currentPath = forcePath === '/' ? `/${folderName}/` : `${forcePath}${folderName}/`;
-          } else {
-              currentPath = currentPath === '/' ? `/${folderName}/` : `${currentPath}${folderName}/`;
-          }
-          loadFiles();
-      }
+            // 增加 forcePath !== 'null' 的判断，防止意外的字符串转换
+            if (forcePath && forcePath !== 'null') {
+                currentPath = forcePath === '/' ? `/${folderName}/` : `${forcePath}${folderName}/`;
+            } else {
+                currentPath = currentPath === '/' ? `/${folderName}/` : `${currentPath}${folderName}/`;
+            }
+            loadFiles();
+        }
 
       function goUp() {
           // 如果当前处于搜索结果页，点击返回直接重置为原先的目录
@@ -314,13 +314,14 @@
               const li = document.createElement('li');
               const pathTag = isSearch ? `<span class="path-info">所在位置: ${f.path}</span>` : '';
               
-              if (f.isFolder) {
-                  li.innerHTML = `
-                      📁 <a class="folder-link" onclick="enterFolder('${f.filename}', '${isSearch ? f.path : null}')">${f.filename}</a> 
-                      ${pathTag}
-                      <button style="margin-top:5px; margin-left:10px;" onclick="createShare('${f.id}')">生成分享</button>
-                  `;
-              } else {
+              // index.html 中的 renderFileList 函数内
+            if (f.isFolder) {
+                li.innerHTML = `
+                    📁 <a class="folder-link" onclick="enterFolder('${f.filename}', ${isSearch ? `'${f.path}'` : 'null'})">${f.filename}</a> 
+                    ${pathTag}
+                    <button style="margin-top:5px; margin-left:10px;" onclick="createShare('${f.id}')">生成分享</button>
+                `;
+            } else {
                   li.innerHTML = `
                       📄 <strong>${f.filename}</strong> <span style="color:#666;font-size:14px;">(${(f.size/1024/1024).toFixed(2)} MB)</span> 
                       ${pathTag} <br>
