@@ -75,9 +75,12 @@ export async function onRequestPost(context) {
             const childStr = await env.TEACHERMATE_OSS_KV.get(key.name);
             if (childStr) {
                 const childData = JSON.parse(childStr);
-                const cPath = childData.path || "/";
-                // 只要路径以该文件夹全路径开头，就说明它是子文件
-                if (cPath.startsWith(fullPath)) {
+                
+                // 【修复核心】统一补全子文件/子目录的缺失字段
+                childData.path = childData.path || "/";
+                childData.isFolder = !!childData.isFolder;
+                
+                if (childData.path.startsWith(fullPath)) {
                     children.push({ id: key.name, ...childData });
                 }
             }
