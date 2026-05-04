@@ -7,11 +7,12 @@
         body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
         .card { border: 1px solid #ccc; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
         button { padding: 8px 15px; cursor: pointer; margin-right: 5px; }
-        #log { white-space: pre-wrap; background: #f4f4f4; padding: 10px; font-size: 12px; }
+        #log { white-space: pre-wrap; background: #f4f4f4; padding: 10px; font-size: 12px; max-height: 200px; overflow-y: auto;}
         .folder-link { font-weight: bold; text-decoration: none; color: #0078d4; cursor: pointer; }
         .folder-link:hover { text-decoration: underline; }
         ul { list-style-type: none; padding-left: 0; }
         li { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px dashed #eee; }
+        .path-info { color: #888; font-size: 12px; margin-left: 10px; }
     </style>
 </head>
 <body>
@@ -22,13 +23,29 @@
         <button id="btnGoUp" onclick="goUp()" style="display: none;">返回上一级</button>
         <button onclick="createFolder()">新建文件夹</button>
         <button onclick="loadFiles()">刷新列表</button>
+        
+        <div style="margin-top: 15px; display: flex; gap: 10px;">
+            <input type="text" id="searchInput" placeholder="全局搜索文件或文件夹..." style="flex: 1; padding: 5px;">
+            <button onclick="searchFiles()">搜索</button>
+        </div>
     </div>
 
     <div class="card">
-        <h3>上传文件到当前目录</h3>
-        <input type="file" id="fileInput" />
-        <button onclick="startUpload()">开始切片上传</button>
-        <p id="uploadStatus">就绪</p>
+        <h3>上传到当前目录</h3>
+        
+        <div style="margin-bottom: 10px;">
+            <label style="font-weight: bold; display: inline-block; width: 100px;">多文件直传：</label>
+            <input type="file" id="fileInput" multiple />
+            <button onclick="startUpload(false)">开始上传文件</button>
+        </div>
+        
+        <div style="margin-bottom: 10px;">
+            <label style="font-weight: bold; display: inline-block; width: 100px;">文件夹上传：</label>
+            <input type="file" id="folderInput" webkitdirectory multiple />
+            <button onclick="startUpload(true)">开始上传文件夹</button>
+        </div>
+
+        <p id="uploadStatus" style="color: #0078d4; font-weight: bold;">就绪</p>
     </div>
 
     <div class="card">
@@ -42,19 +59,18 @@
   <script>
         const ACCOUNT_URL = 'https://accounts.nexabox.de'; 
         const APP_NAME = 'NexaboxDrive';
-        
-        // --- 新增：全局路径状态 ---
         let currentPath = '/';
+        
+        // 缓存当前展示的列表数据（支持跨目录的搜索结果下载）
+        let currentDataList = []; 
     
         function checkAuth() {
             const urlParams = new URLSearchParams(window.location.search);
             const tokenFromUrl = urlParams.get('token');
-    
             if (tokenFromUrl) {
                 localStorage.setItem('pan_token', tokenFromUrl);
                 window.history.replaceState({}, document.title, window.location.pathname);
             }
-    
             const token = localStorage.getItem('pan_token');
             if (!token) {
                 const currentUrl = encodeURIComponent(window.location.href);
@@ -83,8 +99,9 @@
       const OSS_BASE_URL = 'https://teachermate.oss-cn-qingdao.aliyuncs.com/';
   
       function log(msg) {
-          document.getElementById('log').innerText += msg + '\n';
-          console.log(msg);
+          const logDiv = document.getElementById('log');
+          logDiv.innerText += msg + '\n';
+          logDiv.scrollTop = logDiv.scrollHeight;
       }
   
       async function initServiceWorker() {
@@ -105,11 +122,9 @@
       };
   
       // --- 文件夹与路径导航逻辑 ---
-      
       async function createFolder() {
           const folderName = prompt("请输入文件夹名称：");
           if (!folderName) return;
-          
           try {
               const res = await apiFetch('/api/folder', {
                   method: 'POST',
@@ -120,136 +135,202 @@
               if (data.success) {
                   log(`文件夹 ${folderName} 创建成功`);
                   loadFiles();
-              } else {
-                  alert(data.error);
-              }
+              } else alert(data.error);
           } catch (e) { alert("创建文件夹失败"); }
       }
 
-      function enterFolder(folderName) {
-          if (currentPath === '/') {
-              currentPath = `/${folderName}/`;
+      function enterFolder(folderName, forcePath = null) {
+          // 如果是从全局搜索中点击进来的，使用它强制传过来的绝对父级路径
+          if (forcePath) {
+              currentPath = forcePath === '/' ? `/${folderName}/` : `${forcePath}${folderName}/`;
           } else {
-              currentPath = `${currentPath}${folderName}/`;
+              currentPath = currentPath === '/' ? `/${folderName}/` : `${currentPath}${folderName}/`;
           }
           loadFiles();
       }
 
       function goUp() {
+          // 如果当前处于搜索结果页，点击返回直接重置为原先的目录
+          if (document.getElementById('pathDisplay').innerText.startsWith('搜索')) {
+              loadFiles();
+              return;
+          }
           if (currentPath === '/') return;
           const parts = currentPath.split('/').filter(p => p !== '');
-          parts.pop(); // 弹出当前目录
+          parts.pop(); 
           currentPath = parts.length === 0 ? '/' : '/' + parts.join('/') + '/';
           loadFiles();
       }
 
-      // --- 文件上传逻辑 ---
-      async function startUpload() {
-          const fileInput = document.getElementById('fileInput');
-          if (!fileInput.files.length) return alert("请先选择一个文件！");
+      // --- 核心修改：支持多文件和保留层级的文件夹批量上传 ---
+      async function startUpload(isFolderUpload) {
+          const inputId = isFolderUpload ? 'folderInput' : 'fileInput';
+          const fileElement = document.getElementById(inputId);
+          const files = fileElement.files;
           
-          const file = fileInput.files[0];
-          const originalName = file.name;
-          const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-          const chunkUrls = [];
+          if (!files.length) return alert("请先选择内容！");
+          
+          document.getElementById('uploadStatus').innerText = `准备上传 ${files.length} 个文件...`;
+          document.getElementById('uploadStatus').style.color = 'orange';
+
+          // 记录本次上传中已经动态创建过的虚拟文件夹，防止发重复请求
+          const sessionCreatedDirs = new Set();
   
-          log(`开始上传到 ${currentPath} : ${originalName}`);
-          document.getElementById('uploadStatus').innerText = `正在上传... (0/${totalChunks})`;
-  
-          for (let i = 0; i < totalChunks; i++) {
-              const start = i * CHUNK_SIZE;
-              const end = Math.min(start + CHUNK_SIZE, file.size);
-              const chunkBlob = file.slice(start, end, 'image/png');
+          for (let fIdx = 0; fIdx < files.length; fIdx++) {
+              const file = files[fIdx];
+              const originalName = file.name;
               
-              const chunkIndex = String(i + 1).padStart(3, '0');
-              const fakeFileName = `${originalName}.${chunkIndex}.png`;
+              // 决定文件的最终目标路径
+              let targetPath = currentPath;
               
-              try {
-                  const sigRes = await apiFetch('/api/signature');
-                  const ossData = await sigRes.json();
-                  if (!ossData.signature) throw new Error("获取签名失败");
-  
-                  const timestamp = new Date().getTime();
-                  const nameWithoutExt = fakeFileName.substring(0, fakeFileName.lastIndexOf('.')); 
-                  const ossKey = `${nameWithoutExt}-${timestamp}-${fakeFileName}`;
-  
-                  const formData = new FormData();
-                  formData.append('Signature', ossData.signature);
-                  formData.append('OSSAccessKeyId', ossData.accessKeyId);
-                  formData.append('policy', ossData.policy);
-                  formData.append('success_action_status', '200');
-                  formData.append('key', ossKey);
-                  formData.append('file', chunkBlob, fakeFileName);
-  
-                  const ossHost = ossData.host || OSS_BASE_URL;
-                  const uploadRes = await apiFetch(ossHost, { method: 'POST', body: formData });
-  
-                  if (uploadRes.status === 200 || uploadRes.status === 204) {
-                      chunkUrls.push(`${OSS_BASE_URL}${ossKey}`);
-                      document.getElementById('uploadStatus').innerText = `正在上传... (${i+1}/${totalChunks})`;
-                  } else {
-                      throw new Error(`OSS 上传失败: ${uploadRes.status}`);
+              // 如果是上传文件夹，webkitRelativePath 会包含类似于 "图片/2024/logo.png" 的相对层级
+              if (isFolderUpload && file.webkitRelativePath) {
+                  const pathParts = file.webkitRelativePath.split('/');
+                  pathParts.pop(); // 剔除文件名，保留纯目录数组
+                  const relPath = pathParts.join('/'); 
+                  
+                  targetPath = currentPath === '/' ? `/${relPath}/` : `${currentPath}${relPath}/`;
+                  
+                  // 逐级检查并创建虚拟文件夹记录
+                  let incrementalPath = currentPath;
+                  for (const part of pathParts) {
+                      const newPath = incrementalPath === '/' ? `/${part}/` : `${incrementalPath}${part}/`;
+                      if (!sessionCreatedDirs.has(newPath)) {
+                          await apiFetch('/api/folder', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ name: part, path: incrementalPath })
+                          });
+                          sessionCreatedDirs.add(newPath);
+                          log(`[系统] 自动建立虚拟目录层级: ${newPath}`);
+                      }
+                      incrementalPath = newPath;
                   }
-              } catch (e) {
-                  log(`[错误] 分块上传中断: ${e.message}`);
-                  document.getElementById('uploadStatus').innerText = "上传失败";
-                  return;
+              }
+
+              const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+              const chunkUrls = [];
+              
+              log(`[${fIdx+1}/${files.length}] 开始上传至 ${targetPath} : ${originalName}`);
+              document.getElementById('uploadStatus').innerText = `进度 (${fIdx+1}/${files.length}): 正在上传 ${originalName} (0/${totalChunks})`;
+  
+              for (let i = 0; i < totalChunks; i++) {
+                  const start = i * CHUNK_SIZE;
+                  const end = Math.min(start + CHUNK_SIZE, file.size);
+                  const chunkBlob = file.slice(start, end, 'image/png');
+                  const chunkIndex = String(i + 1).padStart(3, '0');
+                  const fakeFileName = `${originalName}.${chunkIndex}.png`;
+                  
+                  try {
+                      const sigRes = await apiFetch('/api/signature');
+                      const ossData = await sigRes.json();
+                      if (!ossData.signature) throw new Error("获取签名失败");
+  
+                      const timestamp = new Date().getTime();
+                      const nameWithoutExt = fakeFileName.substring(0, fakeFileName.lastIndexOf('.')); 
+                      const ossKey = `${nameWithoutExt}-${timestamp}-${fakeFileName}`;
+  
+                      const formData = new FormData();
+                      formData.append('Signature', ossData.signature);
+                      formData.append('OSSAccessKeyId', ossData.accessKeyId);
+                      formData.append('policy', ossData.policy);
+                      formData.append('success_action_status', '200');
+                      formData.append('key', ossKey);
+                      formData.append('file', chunkBlob, fakeFileName);
+  
+                      const ossHost = ossData.host || OSS_BASE_URL;
+                      const uploadRes = await apiFetch(ossHost, { method: 'POST', body: formData });
+  
+                      if (uploadRes.status === 200 || uploadRes.status === 204) {
+                          chunkUrls.push(`${OSS_BASE_URL}${ossKey}`);
+                          document.getElementById('uploadStatus').innerText = `进度 (${fIdx+1}/${files.length}): 正在上传 ${originalName} (${i+1}/${totalChunks})`;
+                      } else {
+                          throw new Error(`OSS 上传失败: ${uploadRes.status}`);
+                      }
+                  } catch (e) {
+                      log(`[错误] ${originalName} 分块上传中断: ${e.message}`);
+                      break; // 跳出当前文件的切片循环，继续上传下一个文件
+                  }
+              }
+              
+              // 只有所有切片都完整收集，才写入元数据
+              if (chunkUrls.length === totalChunks) {
+                  await apiFetch('/api/files', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                          filename: originalName,
+                          size: file.size,
+                          chunks: chunkUrls,
+                          path: targetPath 
+                      })
+                  });
               }
           }
   
-          // 保存元数据，携带 path
-          await apiFetch('/api/files', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                  filename: originalName,
-                  size: file.size,
-                  chunks: chunkUrls,
-                  path: currentPath // 注入当前目录
-              })
-          });
-  
-          document.getElementById('uploadStatus').innerText = "上传完成！";
+          document.getElementById('uploadStatus').innerText = "✅ 批处理上传完成！";
+          document.getElementById('uploadStatus').style.color = 'green';
+          fileElement.value = ""; 
           loadFiles(); 
       }
       
+      // --- 新增：全局搜索接口联动 ---
+      async function searchFiles() {
+          const keyword = document.getElementById('searchInput').value.trim();
+          if (!keyword) return loadFiles(); 
+
+          document.getElementById('pathDisplay').innerText = `搜索结果: "${keyword}"`;
+          document.getElementById('btnGoUp').style.display = 'inline-block'; 
+
+          try {
+              const res = await apiFetch(`/api/search?keyword=${encodeURIComponent(keyword)}`);
+              currentDataList = await res.json();
+              renderFileList(currentDataList, true); 
+          } catch (e) { alert("搜索失败"); }
+      }
+
       // --- 加载文件列表 ---
       async function loadFiles() {
-            // 更新 UI 状态
             document.getElementById('pathDisplay').innerText = currentPath;
             document.getElementById('btnGoUp').style.display = currentPath === '/' ? 'none' : 'inline-block';
+            document.getElementById('searchInput').value = ''; 
 
-            // 带上 path 过滤参数
             const res = await apiFetch(`/api/files?path=${encodeURIComponent(currentPath)}`);
-            const files = await res.json();
-            const list = document.getElementById('fileList');
-            list.innerHTML = '';
+            currentDataList = await res.json();
+            renderFileList(currentDataList, false);
+      }
+      
+      // 抽离统一的 DOM 渲染逻辑
+      function renderFileList(files, isSearch = false) {
+          const list = document.getElementById('fileList');
+          list.innerHTML = '';
             
-            if (files.length === 0) {
-                list.innerHTML = '<li style="color: #999;">当前目录为空</li>';
-                return;
-            }
-    
-            files.forEach(f => {
-                const li = document.createElement('li');
-                
-                if (f.isFolder) {
-                    // 如果是文件夹，渲染为可点击的目录链接
-                    li.innerHTML = `
-                        <a class="folder-link" onclick="enterFolder('${f.filename}')">${f.filename}</a>
-                        <button style="margin-top:5px; margin-left:10px;" onclick="createShare('${f.id}')">生成分享链接</button>
-                    `;
-                } else {
-                    // 如果是文件，渲染常规下载与分享按钮
-                    li.innerHTML = `
-                        <strong>${f.filename}</strong> (${(f.size/1024/1024).toFixed(2)} MB) <br>
-                        <button style="margin-top:5px;" onclick="downloadStream('${f.id}')">流式下载</button>
-                        <button style="margin-top:5px;" onclick="createShare('${f.id}')">生成分享链接</button> 
-                    `;
-                }
-                list.appendChild(li);
-            });
-        }
+          if (files.length === 0) {
+              list.innerHTML = '<li style="color: #999;">无数据或暂未收录</li>';
+              return;
+          }
+  
+          files.forEach(f => {
+              const li = document.createElement('li');
+              const pathTag = isSearch ? `<span class="path-info">所在位置: ${f.path}</span>` : '';
+              
+              if (f.isFolder) {
+                  li.innerHTML = `
+                      📁 <a class="folder-link" onclick="enterFolder('${f.filename}', '${isSearch ? f.path : null}')">${f.filename}</a> 
+                      ${pathTag}
+                      <button style="margin-top:5px; margin-left:10px;" onclick="createShare('${f.id}')">生成分享</button>
+                  `;
+              } else {
+                  li.innerHTML = `
+                      📄 <strong>${f.filename}</strong> <span style="color:#666;font-size:14px;">(${(f.size/1024/1024).toFixed(2)} MB)</span> 
+                      ${pathTag} <br>
+                      <button style="margin-top:5px;" onclick="downloadStream('${f.id}')">流式下载</button>
+                      <button style="margin-top:5px;" onclick="createShare('${f.id}')">生成分享</button> 
+                  `;
+              }
+              list.appendChild(li);
+          });
+      }
     
         async function createShare(fileId) {
             const pwdInput = prompt("请输入提取码（选填，留空则为公开分享）：");
@@ -267,22 +348,16 @@
                     let msg = `分享链接已生成：\n${fullShareUrl}`;
                     if (password) msg += `\n提取码：${password}`;
                     prompt("请复制分享信息：", msg);
-                } else {
-                    alert("生成失败：" + (data.error || "未知错误"));
-                }
+                } else alert("生成失败：" + (data.error || "未知错误"));
             } catch (e) { alert("请求分享接口失败！"); }
         }
   
       async function downloadStream(fileId) {
           if (!navigator.serviceWorker.controller) return alert("Service Worker 未就绪，请刷新重试！");
           
-          // 在带有 path 的情况下，后端需要从全量列表中去找该文件，为了安全和效率，这里我们仍然复用之前的数据
-          // 因为列表数据只包含当前目录，我们可以在内存中查找当前目录的渲染数据
-          const res = await apiFetch(`/api/files?path=${encodeURIComponent(currentPath)}`);
-          const files = await res.json();
-          const fileData = files.find(f => f.id === fileId);
-  
-          if (!fileData) return alert("文件数据丢失");
+          // 【优化】直接从缓存的 currentDataList 查找数据，不再发 API。同时完美解决了从搜索结果页点下载时的跨目录问题。
+          const fileData = currentDataList.find(f => f.id === fileId);
+          if (!fileData) return alert("文件元数据丢失，请尝试刷新列表！");
   
           const taskId = `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
           navigator.serviceWorker.controller.postMessage({
@@ -290,7 +365,7 @@
               filename: fileData.filename, chunks: fileData.chunks, size: fileData.size
           });
   
-          log("唤起浏览器下载引擎...");
+          log(`准备调起下载内核引擎处理文件: ${fileData.filename}`);
           setTimeout(() => {
               const iframe = document.createElement('iframe');
               iframe.style.display = 'none';
