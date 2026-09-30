@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-    <title>NexaboxDrive API 接口文档 v1.5</title>
+    <title>NexaboxDrive API 接口文档 v2.0</title>
     <style>
         pre {
             border: 1px solid #000000;
@@ -22,7 +22,7 @@
 
     <center>
         <h1><font face="黑体" color="#000066">NexaboxDrive API 接口文档</font></h1>
-        <font size="2" color="#666666">内部版本 | <b>Web 1.0 兼容版</b> | v1.5 批量上传与搜索支持</font>
+        <font size="2" color="#666666">内部版本 | <b>个人空间版</b> | v2.0 用户数据隔离与旧数据清理</font>
     </center>
     
     <hr size="2" width="90%" noshade>
@@ -61,8 +61,17 @@
             <li><code>path</code>: 字符串，标识所属的绝对父级虚拟路径（如 <code>/Photos/</code>）。</li>
         </ul>
 
-        <h3>3. 全局搜索逻辑 (Global Search) <span class="new-tag">New!</span></h3>
-        <p>搜索接口会对所有 <code>FILE_</code> 前缀的 KV 记录进行全量扫描，匹配文件名中的关键字（不区分大小写），并返回跨目录的匹配结果。</p>
+        <h3>3. 全局搜索逻辑 (Global Search)</h3>
+        <p>搜索接口仅扫描<b>当前登录用户个人空间</b>内的记录，匹配文件名中的关键字（不区分大小写），并返回跨目录的匹配结果。无法搜索到其他用户的文件。</p>
+
+        <h3>4. 个人空间数据隔离 (Per-User Isolation) <span class="new-tag">New!</span></h3>
+        <p>自 v2.0 起，网盘由共享空间改为<b>每人一个独立空间</b>：</p>
+        <ul>
+            <li><b>数据键规则：</b> 文件/文件夹记录按用户隔离存储，键前缀为 <code>user:&lt;用户名&gt;:file:</code> 与 <code>user:&lt;用户名&gt;:dir:</code>。</li>
+            <li><b>分享记录：</b> 全局键 <code>share:&lt;id&gt;</code>，内含归属人（<code>owner</code>）与源 <code>fileId</code>，公开接口据此回到归属人空间取数。</li>
+            <li><b>权限边界：</b> 列表/搜索/下载只作用于本人空间；分享接口会校验 fileId 归属，禁止分享他人文件。</li>
+            <li><b>旧版数据：</b> 旧共享空间数据（<code>FILE_</code> / <code>SHARE_</code> 前缀）已废弃，管理员可通过 <code>/api/purge-legacy</code> 一次性清空。</li>
+        </ul>
     </blockquote>
 
     <hr size="1" width="90%">
@@ -70,7 +79,7 @@
     <blockquote>
         <h2>三、 接口列表</h2>
 
-        <h3>1. 全局搜索 (Search Files) <span class="new-tag">New!</span></h3>
+        <h3>1. 全局搜索 (Search Files)</h3>
         <ul>
             <li><b>接口路径：</b> <code>/api/search</code></li>
             <li><b>请求方式：</b> <b>GET</b></li>
@@ -114,6 +123,26 @@
             <li><b>接口路径：</b> <code>/api/public/share</code></li>
             <li><b>请求方式：</b> <b>GET / POST</b></li>
             <li><b>说明：</b> POST 验证后，若为文件夹则返回 <code>children</code> 数组，且每个子项均包含规范化的 <code>path</code> 与 <code>isFolder</code> 字段。</li>
+        </ul>
+
+        <h3>6. 获取当前用户信息 (Who am I) <span class="new-tag">New!</span></h3>
+        <ul>
+            <li><b>接口路径：</b> <code>/api/me</code></li>
+            <li><b>请求方式：</b> <b>GET</b></li>
+        </ul>
+<b>返回示例：</b>
+<pre>
+{
+  "username": "alice",
+  "permissions": ["NexaboxDrive"]
+}
+</pre>
+
+        <h3>7. 清空旧版共享数据 (Purge Legacy Data) <span class="new-tag">New!</span></h3>
+        <ul>
+            <li><b>接口路径：</b> <code>/api/purge-legacy</code></li>
+            <li><b>请求方式：</b> <b>GET</b>（查询剩余条数）/ <b>POST</b>（执行清空）</li>
+            <li><b>说明：</b> 删除旧版共享空间 <code>FILE_</code> / <code>SHARE_</code> 前缀的全部 KV 记录，不影响任何用户的个人空间数据。<b>POST 仅限拥有 <code>all</code> 权限的管理员调用。</b></li>
         </ul>
     </blockquote>
 

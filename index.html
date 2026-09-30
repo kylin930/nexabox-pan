@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>NexaboxDrive</title>
+    <title>NexaboxDrive - 个人空间</title>
     <style>
         body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
         .card { border: 1px solid #ccc; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
@@ -16,18 +16,21 @@
     </style>
 </head>
 <body>
-    <h1>NexaboxDrive</h1>
+    <h1>NexaboxDrive <span style="font-size: 16px; color: #888;">个人空间</span></h1>
 
     <div class="card" style="background-color: #f9f9f9;">
         <h3 style="margin-top: 0;">当前路径: <span id="pathDisplay">/</span></h3>
         <button id="btnGoUp" onclick="goUp()" style="display: none;">返回上一级</button>
         <button onclick="createFolder()">新建文件夹</button>
         <button onclick="loadFiles()">刷新列表</button>
-        
+        <button id="btnPurgeLegacy" onclick="purgeLegacyData()" style="display:none; color:#d83b01;">清空旧版共享数据</button>
+
         <div style="margin-top: 15px; display: flex; gap: 10px;">
-            <input type="text" id="searchInput" placeholder="全局搜索文件或文件夹..." style="flex: 1; padding: 5px;">
+            <input type="text" id="searchInput" placeholder="搜索我的文件或文件夹..." style="flex: 1; padding: 5px;">
             <button onclick="searchFiles()">搜索</button>
         </div>
+
+        <p style="color:#888; font-size:12px; margin:10px 0 0;">当前用户：<span id="currentUser" style="font-weight:bold; color:#333;">加载中...</span>（每个账号拥有独立的个人空间）</p>
     </div>
 
     <div class="card">
@@ -118,8 +121,34 @@
       
       window.onload = async () => {
           await initServiceWorker();
+          loadUserInfo();
           loadFiles();
       };
+
+      // 加载当前登录用户信息，管理员显示「清空旧版共享数据」入口
+      async function loadUserInfo() {
+          try {
+              const res = await apiFetch('/api/me');
+              const data = await res.json();
+              document.getElementById('currentUser').innerText = data.username || '未知';
+              if ((data.permissions || []).includes('all')) {
+                  document.getElementById('btnPurgeLegacy').style.display = 'inline-block';
+              }
+          } catch (e) { document.getElementById('currentUser').innerText = '获取失败'; }
+      }
+
+      // 管理员操作：一次性清空旧版共享空间的 KV 数据（FILE_ / SHARE_ 前缀）
+      async function purgeLegacyData() {
+          if (!confirm('确认要彻底清空旧版共享空间的全部数据吗？此操作不可恢复！')) return;
+          try {
+              const res = await apiFetch('/api/purge-legacy', { method: 'POST' });
+              const data = await res.json();
+              if (data.success) {
+                  log(`[系统] 旧版共享数据已清空，共删除 ${data.deleted} 条记录`);
+                  alert(`清理完成，共删除 ${data.deleted} 条旧数据`);
+              } else alert(data.error || '清理失败');
+          } catch (e) { alert('清理请求失败'); }
+      }
   
       // --- 文件夹与路径导航逻辑 ---
       async function createFolder() {
