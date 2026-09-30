@@ -1,5 +1,5 @@
 // functions/api/search.js
-// 在当前用户的个人空间内全局搜索文件/文件夹
+// 搜索文件/文件夹：默认搜当前用户的个人空间，scope=pool 时搜共享资源池
 export async function onRequestGet(context) {
   const { request, env, data } = context;
   const username = data?.username;
@@ -14,11 +14,17 @@ export async function onRequestGet(context) {
   }
 
   try {
-    // 只扫描当前用户个人空间内的文件与文件夹
-    const keys = [
-      ...await listAllKeys(env.TEACHERMATE_OSS_KV, `user:${username}:file:`),
-      ...await listAllKeys(env.TEACHERMATE_OSS_KV, `user:${username}:dir:`),
-    ];
+    // scope=pool 时搜索共享资源池，默认只扫描当前用户个人空间内的文件与文件夹
+    const scope = url.searchParams.get('scope');
+    const keys = scope === 'pool'
+      ? [
+          ...await listAllKeys(env.TEACHERMATE_OSS_KV, `pool:file:`),
+          ...await listAllKeys(env.TEACHERMATE_OSS_KV, `pool:dir:`),
+        ]
+      : [
+          ...await listAllKeys(env.TEACHERMATE_OSS_KV, `user:${username}:file:`),
+          ...await listAllKeys(env.TEACHERMATE_OSS_KV, `user:${username}:dir:`),
+        ];
     let results = [];
 
     for (const key of keys) {

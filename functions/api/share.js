@@ -9,9 +9,9 @@ export async function onRequestPost(context) {
       return new Response(JSON.stringify({ error: "缺少 fileId" }), { status: 400 });
     }
 
-    // 【个人空间安全限制】只能分享属于当前用户的文件/文件夹
-    if (!fileId.startsWith(`user:${username}:`)) {
-      return new Response(JSON.stringify({ error: "只能分享您个人空间内的文件" }), { status: 403 });
+    // 【安全限制】只能分享自己个人空间内的文件/文件夹，或共享资源池内的内容
+    if (!fileId.startsWith(`user:${username}:`) && !fileId.startsWith('pool:')) {
+      return new Response(JSON.stringify({ error: "只能分享您个人空间或资源池内的文件" }), { status: 403 });
     }
 
     const targetStr = await env.TEACHERMATE_OSS_KV.get(fileId);

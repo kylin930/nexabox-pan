@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-    <title>NexaboxDrive API 接口文档 v2.0</title>
+    <title>NexaboxDrive API 接口文档 v2.1</title>
     <style>
         pre {
             border: 1px solid #000000;
@@ -22,7 +22,7 @@
 
     <center>
         <h1><font face="黑体" color="#000066">NexaboxDrive API 接口文档</font></h1>
-        <font size="2" color="#666666">内部版本 | <b>个人空间版</b> | v2.0 用户数据隔离与旧数据清理</font>
+        <font size="2" color="#666666">内部版本 | <b>个人空间 + 资源池版</b> | v2.1 用户数据隔离 · 共享资源池 · 旧数据清理</font>
     </center>
     
     <hr size="2" width="90%" noshade>
@@ -70,6 +70,7 @@
             <li><b>数据键规则：</b> 文件/文件夹记录按用户隔离存储，键前缀为 <code>user:&lt;用户名&gt;:file:</code> 与 <code>user:&lt;用户名&gt;:dir:</code>。</li>
             <li><b>分享记录：</b> 全局键 <code>share:&lt;id&gt;</code>，内含归属人（<code>owner</code>）与源 <code>fileId</code>，公开接口据此回到归属人空间取数。</li>
             <li><b>权限边界：</b> 列表/搜索/下载只作用于本人空间；分享接口会校验 fileId 归属，禁止分享他人文件。</li>
+            <li><b>资源池：</b> <code>pool:</code> 前缀为<b>全员共享空间</b>，与个人空间互相独立，任何拥有网盘权限的用户均可上传/查看/下载/分享，详见接口 8。</li>
             <li><b>旧版数据：</b> 旧共享空间数据（<code>FILE_</code> / <code>SHARE_</code> 前缀）已废弃，管理员可通过 <code>/api/purge-legacy</code> 一次性清空。</li>
         </ul>
     </blockquote>
@@ -83,7 +84,7 @@
         <ul>
             <li><b>接口路径：</b> <code>/api/search</code></li>
             <li><b>请求方式：</b> <b>GET</b></li>
-            <li><b>查询参数：</b> <code>keyword</code> (必填，搜索关键字)</li>
+            <li><b>查询参数：</b> <code>keyword</code> (必填，搜索关键字)；<code>scope</code> (可选，<code>pool</code> 时搜索资源池，默认搜索个人空间)</li>
         </ul>
         <b>返回示例：</b>
 <pre>
@@ -116,6 +117,7 @@
         <ul>
             <li><b>接口路径：</b> <code>/api/share</code></li>
             <li><b>请求方式：</b> <b>POST</b></li>
+            <li><b>说明：</b> 可分享个人空间内自己的文件/文件夹，或资源池内的任何内容。</li>
         </ul>
 
         <h3>5. 获取公共分享信息 (Get Public Share Info)</h3>
@@ -143,6 +145,13 @@
             <li><b>接口路径：</b> <code>/api/purge-legacy</code></li>
             <li><b>请求方式：</b> <b>GET</b>（查询剩余条数）/ <b>POST</b>（执行清空）</li>
             <li><b>说明：</b> 删除旧版共享空间 <code>FILE_</code> / <code>SHARE_</code> 前缀的全部 KV 记录，不影响任何用户的个人空间数据。<b>POST 仅限拥有 <code>all</code> 权限的管理员调用。</b></li>
+        </ul>
+
+        <h3>8. 资源池 (Resource Pool) <span class="new-tag">New!</span></h3>
+        <ul>
+            <li><b>接口路径：</b> <code>/api/pool</code></li>
+            <li><b>请求方式：</b> <b>GET</b>（列取资源池内容，查询参数 <code>path</code> 可选）/ <b>POST</b>（保存文件元数据或创建文件夹）</li>
+            <li><b>说明：</b> 资源池为<b>全员共享空间</b>，所有拥有网盘权限的用户均可上传、查看与下载。POST 时传 <code>isFolder: true</code> 即创建文件夹；服务端自动记录 <code>uploader</code>（上传者）字段用于溯源。数据键为 <code>pool:file:</code> / <code>pool:dir:</code> 前缀，与个人空间完全隔离。</li>
         </ul>
     </blockquote>
 

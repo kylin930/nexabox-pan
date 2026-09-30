@@ -2,53 +2,78 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>NexaboxDrive - 文件预览与提取</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mdui@1.0.2/dist/css/mdui.min.css">
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f7f9; padding: 20px; color: #333; }
-        .preview-container { margin-top: 20px; border-top: 1px solid #eee; padding-top: 20px; display: none; }
-        
-        /* 预览组件样式 */
         video, audio { width: 100%; max-height: 450px; border-radius: 8px; background: #000; }
-        img { max-width: 100%; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
-        pre { text-align: left; background: #272822; color: #f8f8f2; padding: 15px; border-radius: 8px; overflow-x: auto; font-size: 14px; line-height: 1.5; max-height: 500px; }
-        
-        #errorMsg { color: #d83b01; margin-top: 10px; font-weight: bold; }
+        img { max-width: 100%; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+        pre { text-align: left; background: #272822; color: #f8f8f2; padding: 15px; border-radius: 8px;
+              overflow-x: auto; font-size: 14px; line-height: 1.5; max-height: 500px; margin: 0; }
+        #previewArea { margin-top: 16px; }
+        #folderArea { margin-top: 16px; text-align: left; }
     </style>
 </head>
-<body>
-    <div class="card">
-        <h2>文件分享</h2>
-        <h3 id="filename">加载中...</h3>
-        <p id="filesize"></p>
-        
-        <div id="pwdContainer" style="display:none;">
-            <input type="text" id="pwdInput" placeholder="请输入提取码">
-            <br>
-            <button class="btn btn-primary" onclick="unlockShare()">验证并预览</button>
-        </div>
+<body class="mdui-theme-primary-indigo mdui-theme-accent-indigo mdui-loaded">
 
-        <div id="actionButtons" style="display:none;">
-            <button id="btnDownload" class="btn btn-primary" onclick="startShareDownload()">立即下载</button>
-            <button id="btnBatchDownload" class="btn btn-primary" style="display:none;" onclick="downloadFolder()">一键保存到本地</button>
-            <div id="previewStatus">正在准备...</div>
+    <div class="mdui-appbar">
+        <div class="mdui-toolbar">
+            <a href="javascript:;" class="mdui-btn mdui-btn-icon" title="NexaboxDrive">
+                <i class="mdui-icon material-icons">cloud</i>
+            </a>
+            <span class="mdui-typo-title">NexaboxDrive · 文件分享</span>
         </div>
-
-        <div id="previewArea" class="preview-container"></div>
-        
-        <div id="folderArea" class="preview-container" style="text-align: left; display: none;">
-            <h4 style="margin-top:0;">文件夹包含内容：</h4>
-            <ul id="folderFileList" style="list-style:none; padding:0; font-size:14px; max-height:400px; overflow-y:auto;"></ul>
-        </div>
-
-        <p id="errorMsg"></p>
     </div>
 
+    <div class="mdui-container">
+        <div class="mdui-card mdui-m-t-4 mdui-m-b-4">
+            <div class="mdui-card-primary">
+                <div class="mdui-card-primary-title" id="filename">加载中...</div>
+                <div class="mdui-card-primary-subtitle" id="filesize"></div>
+            </div>
+            <div class="mdui-card-content">
+
+                <div id="pwdContainer" class="mdui-textfield" style="display:none;max-width:340px;">
+                    <i class="mdui-icon material-icons">lock</i>
+                    <input id="pwdInput" class="mdui-textfield-input" type="text"
+                           placeholder="请输入提取码" onkeydown="if(event.key==='Enter')unlockShare()">
+                </div>
+                <button id="btnUnlock" class="mdui-btn mdui-btn-raised mdui-color-theme-accent mdui-ripple"
+                        style="display:none;" onclick="unlockShare()">
+                    <i class="mdui-icon material-icons">vpn_key</i> 验证并预览
+                </button>
+
+                <div id="actionButtons" style="display:none;">
+                    <button id="btnDownload" class="mdui-btn mdui-btn-raised mdui-color-theme-accent mdui-ripple" onclick="startShareDownload()">
+                        <i class="mdui-icon material-icons">cloud_download</i> 立即下载
+                    </button>
+                    <button id="btnBatchDownload" class="mdui-btn mdui-btn-raised mdui-ripple" style="display:none;" onclick="downloadFolder()">
+                        <i class="mdui-icon material-icons">save_alt</i> 一键保存到本地
+                    </button>
+                    <p id="previewStatus" class="mdui-typo-caption mdui-text-color-black-secondary" style="margin:12px 0 0;">正在准备...</p>
+                </div>
+
+                <div id="previewArea" style="display:none;"></div>
+
+                <div id="folderArea" style="display:none;">
+                    <div class="mdui-subheader-inset mdui-text-color-theme-text">文件夹包含内容</div>
+                    <ul class="mdui-list" id="folderFileList" style="max-height:420px;overflow-y:auto;"></ul>
+                </div>
+
+                <p id="errorMsg" class="mdui-typo-caption" style="color:#d83b01;margin:12px 0 0;font-weight:bold;"></p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/mdui@1.0.2/dist/js/mdui.min.js"></script>
     <script>
         let fileData = null;
         const shareId = new URLSearchParams(window.location.search).get('id');
 
         async function initSW() {
-            if (!('serviceWorker' in navigator)) return alert("浏览器不支持预览所需技术");
+            if (!('serviceWorker' in navigator)) {
+                return mdui.alert('浏览器不支持预览所需技术', '提示');
+            }
             await navigator.serviceWorker.register('/sw.js');
             await navigator.serviceWorker.ready;
         }
@@ -58,16 +83,17 @@
                 const res = await fetch(`/api/public/share?id=${shareId}`);
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error);
-                
-                document.getElementById('filename').innerText = data.isFolder ? `📁 ${data.filename}` : data.filename;
-                document.getElementById('filesize').innerText = data.isFolder ? `类型：文件夹` : `大小: ${(data.size/1024/1024).toFixed(2)} MB`;
-                
+
+                document.getElementById('filename').textContent = data.isFolder ? `📁 ${data.filename}` : data.filename;
+                document.getElementById('filesize').textContent = data.isFolder ? '类型：文件夹' : `大小: ${(data.size / 1024 / 1024).toFixed(2)} MB`;
+
                 if (data.needPassword) {
                     document.getElementById('pwdContainer').style.display = 'block';
+                    document.getElementById('btnUnlock').style.display = 'inline-flex';
                 } else {
                     await fetchFullData(null);
                 }
-            } catch (e) { document.getElementById('errorMsg').innerText = e.message; }
+            } catch (e) { document.getElementById('errorMsg').textContent = e.message; }
         }
 
         async function unlockShare() {
@@ -87,46 +113,64 @@
 
                 fileData = data;
                 document.getElementById('pwdContainer').style.display = 'none';
+                document.getElementById('btnUnlock').style.display = 'none';
                 document.getElementById('actionButtons').style.display = 'block';
-                
+
                 setupPreview();
-            } catch (e) { document.getElementById('errorMsg').innerText = e.message; }
+            } catch (e) { document.getElementById('errorMsg').textContent = e.message; }
+        }
+
+        function renderFolderChildren() {
+            document.getElementById('btnDownload').style.display = 'none';
+            document.getElementById('btnBatchDownload').style.display = 'inline-flex';
+            document.getElementById('previewArea').style.display = 'none';
+
+            const folderArea = document.getElementById('folderArea');
+            const list = document.getElementById('folderFileList');
+            folderArea.style.display = 'block';
+
+            const fileCount = fileData.children.filter(c => !c.isFolder).length;
+            document.getElementById('previewStatus').innerText =
+                `共 ${fileCount} 个文件，已支持保留路径结构批量下载`;
+
+            list.innerHTML = '';
+            fileData.children.forEach(c => {
+                const li = document.createElement('li');
+                li.className = 'mdui-list-item mdui-ripple';
+
+                const avatar = document.createElement('i');
+                avatar.className = 'mdui-list-item-avatar mdui-icon material-icons';
+                avatar.textContent = c.isFolder ? 'folder' : 'insert_drive_file';
+                if (c.isFolder) avatar.style.background = '#e8eaf6';
+
+                const content = document.createElement('div');
+                content.className = 'mdui-list-item-content';
+                const title = document.createElement('div');
+                title.className = 'mdui-list-item-title';
+                title.textContent = c.filename;
+                const desc = document.createElement('div');
+                desc.className = 'mdui-list-item-text';
+                desc.textContent = c.isFolder
+                    ? '子目录'
+                    : `${(c.size / 1024 / 1024).toFixed(2)} MB · 位置: ${c.path}`;
+                content.appendChild(title);
+                content.appendChild(desc);
+
+                li.appendChild(avatar);
+                li.appendChild(content);
+                list.appendChild(li);
+            });
         }
 
         async function setupPreview() {
-            // 如果是文件夹分享
-            if (fileData.isFolder) {
-                document.getElementById('btnDownload').style.display = 'none';
-                document.getElementById('btnBatchDownload').style.display = 'inline-block';
-                document.getElementById('previewArea').style.display = 'none';
-                
-                const folderArea = document.getElementById('folderArea');
-                const list = document.getElementById('folderFileList');
-                folderArea.style.display = 'block';
-                
-                const fileCount = fileData.children.filter(c => !c.isFolder).length;
-                document.getElementById('previewStatus').innerText = `共 ${fileCount} 个文件，已支持保留路径结构批量下载`;
-                
-                list.innerHTML = '';
-                fileData.children.forEach(c => {
-                    const li = document.createElement('li');
-                    li.style.padding = "8px 0";
-                    li.style.borderBottom = "1px solid #eee";
-                    if (c.isFolder) {
-                         li.innerHTML = `<strong>${c.filename}</strong> <span style="color:#888;">(子目录)</span>`;
-                    } else {
-                         li.innerHTML = `<strong>${c.filename}</strong> <span style="color:#888; margin-left:10px;">${(c.size/1024/1024).toFixed(2)} MB | 位置: ${c.path}</span>`;
-                    }
-                    list.appendChild(li);
-                });
-                return;
-            }
+            // 文件夹分享：渲染包含内容列表
+            if (fileData.isFolder) return renderFolderChildren();
 
-            // 单文件预览逻辑保持不变
+            // 单文件预览
             const name = fileData.filename.toLowerCase();
             const previewArea = document.getElementById('previewArea');
             const status = document.getElementById('previewStatus');
-            
+
             const taskId = `preview_${Date.now()}`;
             navigator.serviceWorker.controller.postMessage({
                 type: 'PREPARE_DOWNLOAD', id: taskId,
@@ -135,7 +179,7 @@
             const streamUrl = `/virtual-download/${taskId}`;
 
             previewArea.style.display = 'block';
-            status.innerText = "支持预览此类型文件";
+            status.innerText = '支持预览此类型文件';
 
             if (/\.(mp4|webm|ogg|mov)$/.test(name)) {
                 previewArea.innerHTML = `<video controls src="${streamUrl}"></video>`;
@@ -145,16 +189,16 @@
                 previewArea.innerHTML = `<img src="${streamUrl}" alt="Preview">`;
             } else if (/\.(txt|md|js|css|json|cpp|py)$/.test(name)) {
                 try {
-                    status.innerText = "正在读取文本内容...";
+                    status.innerText = '正在读取文本内容...';
                     const textRes = await fetch(streamUrl);
                     const content = await textRes.text();
-                    const safeContent = content.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                    const safeContent = content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                     previewArea.innerHTML = `<pre><code>${safeContent}</code></pre>`;
-                    status.innerText = "文本预览已就绪";
-                } catch (e) { status.innerText = "文本读取失败"; }
+                    status.innerText = '文本预览已就绪';
+                } catch (e) { status.innerText = '文本读取失败'; }
             } else {
                 previewArea.style.display = 'none';
-                status.innerText = "此文件类型不支持在线预览，请下载后查看。";
+                status.innerText = '此文件类型不支持在线预览，请下载后查看。';
             }
         }
 
@@ -168,64 +212,62 @@
             iframe.style.display = 'none';
             iframe.src = `/virtual-download/${taskId}`;
             document.body.appendChild(iframe);
+            mdui.snackbar(`开始下载: ${fileData.filename}`);
         }
 
-        // 新增核心黑科技：保留路径层级的硬盘直写下载 (支持超大文件)
+        // 保留路径层级的硬盘直写下载（支持超大文件）
         async function downloadFolder() {
             if (!window.showDirectoryPicker) {
-                return alert("您的浏览器不支持一键批量直写，请使用最新版 Chrome、Edge 浏览器！");
+                return mdui.alert('您的浏览器不支持一键批量直写，请使用最新版 Chrome、Edge 浏览器！', '提示');
             }
             try {
                 // 1. 让用户授权并选择一个本地用来存放的文件夹
-                const rootHandle = await window.showDirectoryPicker({
-                    mode: 'readwrite'
-                });
-                
+                const rootHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+
                 const statusStr = document.getElementById('previewStatus');
                 const rootPath = fileData.fullPath; // 例如 "/photos/"
                 const filesToDownload = fileData.children.filter(c => !c.isFolder);
-                
+
                 let downloaded = 0;
-                
+
                 // 2. 遍历所有文件，利用 SW 流写入硬盘
                 for (const file of filesToDownload) {
                     statusStr.innerText = `批量下载中... (${downloaded + 1}/${filesToDownload.length}) -> ${file.filename}`;
-                    
+
                     // 计算相对路径。例如 file.path 是 "/photos/summer/"，rootPath 是 "/photos/"
-                    // 剥离出 "summer/" 方便我们逐级在本地创建子文件夹
-                    const relPath = file.path.startsWith(rootPath) ? file.path.substring(rootPath.length) : "";
+                    const relPath = file.path.startsWith(rootPath) ? file.path.substring(rootPath.length) : '';
                     const pathParts = relPath.split('/').filter(p => p !== '');
-                    
+
                     let currentHandle = rootHandle;
                     for (const part of pathParts) {
                         currentHandle = await currentHandle.getDirectoryHandle(part, { create: true });
                     }
-                    
+
                     // 在指定的层级创建空文件准备写入
                     const fileHandle = await currentHandle.getFileHandle(file.filename, { create: true });
                     const writable = await fileHandle.createWritable();
-                    
+
                     // 通过 SW 获取已拼接好的 OSS 流数据
                     const taskId = `dl_batch_${Math.random().toString(36).substr(2, 9)}`;
                     navigator.serviceWorker.controller.postMessage({
                         type: 'PREPARE_DOWNLOAD', id: taskId,
                         filename: file.filename, chunks: file.chunks, size: file.size
                     });
-                    
+
                     const res = await fetch(`/virtual-download/${taskId}`);
                     // 管线对接：把虚拟流数据源源不断地泵入用户本地硬盘
                     await res.body.pipeTo(writable);
-                    
+
                     downloaded++;
                 }
-                
-                statusStr.innerText = "✨ 批量下载完成！";
-                alert("文件夹下载成功，请前往您选择的本地文件夹查看。");
-                
+
+                statusStr.innerText = '✨ 批量下载完成！';
+                mdui.snackbar('文件夹下载成功，请前往您选择的本地文件夹查看。');
+
             } catch (e) {
                 console.error(e);
                 // 报错大概率是用户取消了选择文件夹授权
-                document.getElementById('previewStatus').innerText = "下载被取消或发生错误。";
+                document.getElementById('previewStatus').innerText = '下载被取消或发生错误。';
             }
         }
 

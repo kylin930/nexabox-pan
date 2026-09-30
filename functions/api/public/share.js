@@ -53,9 +53,13 @@ export async function onRequestPost(context) {
       const basePath = fileData.path === '/' ? '' : fileData.path;
       const fullPath = `${basePath}/${fileData.filename}/`.replace(/\/\//g, '/');
 
+      // 资源池文件夹从 pool: 前缀聚合子项，个人空间文件夹从归属人前缀聚合
+      const keyPrefixes = shareData.fileId.startsWith('pool:')
+        ? ['pool:file:', 'pool:dir:']
+        : [`user:${shareData.owner}:file:`, `user:${shareData.owner}:dir:`];
       const keys = [
-        ...await listAllKeys(env.TEACHERMATE_OSS_KV, `user:${shareData.owner}:file:`),
-        ...await listAllKeys(env.TEACHERMATE_OSS_KV, `user:${shareData.owner}:dir:`),
+        ...await listAllKeys(env.TEACHERMATE_OSS_KV, keyPrefixes[0]),
+        ...await listAllKeys(env.TEACHERMATE_OSS_KV, keyPrefixes[1]),
       ];
       let children = [];
 
