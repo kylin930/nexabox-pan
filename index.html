@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>NexaboxDrive - 个人空间</title>
+    <title>NexaboxDrive</title>
     <style>
         body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
         .card { border: 1px solid #ccc; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
@@ -13,10 +13,17 @@
         ul { list-style-type: none; padding-left: 0; }
         li { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px dashed #eee; }
         .path-info { color: #888; font-size: 12px; margin-left: 10px; }
+        .tab-btn { border: 1px solid #0078d4; background: #fff; color: #0078d4; border-radius: 4px; }
+        .tab-btn.tab-active { background: #0078d4; color: #fff; }
     </style>
 </head>
 <body>
-    <h1>NexaboxDrive <span style="font-size: 16px; color: #888;">个人空间</span></h1>
+    <h1>NexaboxDrive</h1>
+
+    <div style="margin-bottom: 15px;">
+        <button id="tabPersonal" class="tab-btn tab-active" onclick="switchScope('personal')">个人空间</button>
+        <button id="tabPool" class="tab-btn" onclick="switchScope('pool')">资源池（共享）</button>
+    </div>
 
     <div class="card" style="background-color: #f9f9f9;">
         <h3 style="margin-top: 0;">当前路径: <span id="pathDisplay">/</span></h3>
@@ -26,11 +33,11 @@
         <button id="btnPurgeLegacy" onclick="purgeLegacyData()" style="display:none; color:#d83b01;">清空旧版共享数据</button>
 
         <div style="margin-top: 15px; display: flex; gap: 10px;">
-            <input type="text" id="searchInput" placeholder="搜索我的文件或文件夹..." style="flex: 1; padding: 5px;">
+            <input type="text" id="searchInput" placeholder="搜索当前空间内的文件或文件夹..." style="flex: 1; padding: 5px;">
             <button onclick="searchFiles()">搜索</button>
         </div>
 
-        <p style="color:#888; font-size:12px; margin:10px 0 0;">当前用户：<span id="currentUser" style="font-weight:bold; color:#333;">加载中...</span>（每个账号拥有独立的个人空间）</p>
+        <p style="color:#888; font-size:12px; margin:10px 0 0;">当前用户：<span id="currentUser" style="font-weight:bold; color:#333;">加载中...</span>（个人空间互相独立，资源池全员共享）</p>
     </div>
 
     <div class="card">
@@ -65,7 +72,41 @@
         let currentPath = '/';
         
         // 缓存当前展示的列表数据（支持跨目录的搜索结果下载）
-        let currentDataList = []; 
+        let currentDataList = [];
+
+        // 当前所处空间：personal=个人空间 pool=共享资源池
+        let currentScope = 'personal';
+
+        function switchScope(scope) {
+            currentScope = scope;
+            currentPath = '/';
+            document.getElementById('tabPersonal').classList.toggle('tab-active', scope === 'personal');
+            document.getElementById('tabPool').classList.toggle('tab-active', scope === 'pool');
+            loadFiles();
+        }
+
+        // 按当前空间分流保存记录：资源池统一走 /api/pool，个人空间走原接口
+        async function saveItemRecord(payload) {
+            if (currentScope === 'pool') {
+                return apiFetch('/api/pool', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            }
+            if (payload.isFolder) {
+                return apiFetch('/api/folder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: payload.name, path: payload.path })
+                });
+            }
+            return apiFetch('/api/files', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        }
     
         function checkAuth() {
             const urlParams = new URLSearchParams(window.location.search);
@@ -155,11 +196,7 @@
           const folderName = prompt("请输入文件夹名称：");
           if (!folderName) return;
           try {
-              const res = await apiFetch('/api/folder', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ name: folderName, path: currentPath })
-              });
+              const res = await saveItemRecord({ name: folderName, filename: folderName, path: currentPath, isFolder: true });
               const data = await res.json();
               if (data.success) {
                   log(`文件夹 ${folderName} 创建成功`);
@@ -225,11 +262,7 @@
                   for (const part of pathParts) {
                       const newPath = incrementalPath === '/' ? `/${part}/` : `${incrementalPath}${part}/`;
                       if (!sessionCreatedDirs.has(newPath)) {
-                          await apiFetch('/api/folder', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ name: part, path: incrementalPath })
-                          });
+                          await saveItemRecord({ name: part, filename: part, path: incrementalPath, isFolder: true });
                           sessionCreatedDirs.add(newPath);
                           log(`[系统] 自动建立虚拟目录层级: ${newPath}`);
                       }
@@ -282,17 +315,13 @@
                   }
               }
               
-              // 只有所有切片都完整收集，才写入元数据
+              // 只有所有切片都完整收集，才写入元数据（按当前空间分流）
               if (chunkUrls.length === totalChunks) {
-                  await apiFetch('/api/files', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                          filename: originalName,
-                          size: file.size,
-                          chunks: chunkUrls,
-                          path: targetPath 
-                      })
+                  await saveItemRecord({
+                      filename: originalName,
+                      size: file.size,
+                      chunks: chunkUrls,
+                      path: targetPath
                   });
               }
           }
@@ -312,7 +341,9 @@
           document.getElementById('btnGoUp').style.display = 'inline-block'; 
 
           try {
-              const res = await apiFetch(`/api/search?keyword=${encodeURIComponent(keyword)}`);
+              // 资源池模式下搜索共享空间，个人空间模式只搜自己的文件
+              const scopeParam = currentScope === 'pool' ? '&scope=pool' : '';
+              const res = await apiFetch(`/api/search?keyword=${encodeURIComponent(keyword)}${scopeParam}`);
               currentDataList = await res.json();
               renderFileList(currentDataList, true); 
           } catch (e) { alert("搜索失败"); }
@@ -324,7 +355,8 @@
             document.getElementById('btnGoUp').style.display = currentPath === '/' ? 'none' : 'inline-block';
             document.getElementById('searchInput').value = ''; 
 
-            const res = await apiFetch(`/api/files?path=${encodeURIComponent(currentPath)}`);
+            const endpoint = currentScope === 'pool' ? '/api/pool' : '/api/files';
+            const res = await apiFetch(`${endpoint}?path=${encodeURIComponent(currentPath)}`);
             currentDataList = await res.json();
             renderFileList(currentDataList, false);
       }
@@ -342,20 +374,20 @@
           files.forEach(f => {
               const li = document.createElement('li');
               const pathTag = isSearch ? `<span class="path-info">所在位置: ${f.path}</span>` : '';
-              
-              // index.html 中的 renderFileList 函数内
+              const uploaderTag = (currentScope === 'pool' && f.uploader) ? `<span class="path-info">上传者: ${f.uploader}</span>` : '';
+
             if (f.isFolder) {
                 li.innerHTML = `
-                    📁 <a class="folder-link" onclick="enterFolder('${f.filename}', ${isSearch ? `'${f.path}'` : 'null'})">${f.filename}</a> 
-                    ${pathTag}
+                    📁 <a class="folder-link" onclick="enterFolder('${f.filename}', ${isSearch ? `'${f.path}'` : 'null'})">${f.filename}</a>
+                    ${pathTag} ${uploaderTag}
                     <button style="margin-top:5px; margin-left:10px;" onclick="createShare('${f.id}')">生成分享</button>
                 `;
             } else {
                   li.innerHTML = `
-                      📄 <strong>${f.filename}</strong> <span style="color:#666;font-size:14px;">(${(f.size/1024/1024).toFixed(2)} MB)</span> 
-                      ${pathTag} <br>
+                      📄 <strong>${f.filename}</strong> <span style="color:#666;font-size:14px;">(${(f.size/1024/1024).toFixed(2)} MB)</span>
+                      ${pathTag} ${uploaderTag} <br>
                       <button style="margin-top:5px;" onclick="downloadStream('${f.id}')">流式下载</button>
-                      <button style="margin-top:5px;" onclick="createShare('${f.id}')">生成分享</button> 
+                      <button style="margin-top:5px;" onclick="createShare('${f.id}')">生成分享</button>
                   `;
               }
               list.appendChild(li);
