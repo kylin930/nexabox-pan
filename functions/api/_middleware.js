@@ -58,6 +58,11 @@ export async function onRequest(context) {
       return withCors(new Response(JSON.stringify({ error: '您没有访问网盘的权限' }), { status: 403 }));
     }
 
+    // 【个人空间改造】将当前登录用户名与权限传递给下游接口，所有网盘数据按用户隔离
+    context.data = context.data || {};
+    context.data.username = sessionData.username;
+    context.data.permissions = permissions;
+
     return withCors(await next());
     
   } catch (error) {

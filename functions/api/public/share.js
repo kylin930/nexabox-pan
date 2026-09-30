@@ -1,4 +1,5 @@
 // functions/api/public/share.js
+// 公开分享接口（无需登录）：从分享记录回到归属人的个人空间取数
 export async function onRequestGet(context) {
   const { request, env } = context;
   const url = new URL(request.url);
@@ -7,29 +8,20 @@ export async function onRequestGet(context) {
   if (!shareId) return new Response(JSON.stringify({ error: "缺少分享 ID" }), { status: 400 });
 
   try {
-    const shareDataStr = await env.TEACHERMATE_OSS_KV.get(`SHARE_${shareId}`);
-    if (!shareDataStr) return new Response(JSON.stringify({ error: "分享链接不存在或已失效" }), { status: 404 });
+    const shareData = await readShare(env, shareId);
+    if (!shareData) return new Response(JSON.stringify({ error: "分享链接不存在或已失效" }), { status: 404 });
 
-    let fileId, hasPassword = false;
-    try {
-        const shareData = JSON.parse(shareDataStr);
-        fileId = shareData.fileId;
-        hasPassword = !!shareData.password;
-    } catch(e) {
-        fileId = shareDataStr; 
-    }
-
-    const fileDataStr = await env.TEACHERMATE_OSS_KV.get(fileId);
+    const fileDataStr = await env.TEACHERMATE_OSS_KV.get(shareData.fileId);
     if (!fileDataStr) return new Response(JSON.stringify({ error: "源文件已被删除" }), { status: 404 });
 
     const fileData = JSON.parse(fileDataStr);
 
-    // 新增：向前端暴露 isFolder 属性，便于前端区分是文件还是文件夹
+    // 向前端暴露 isFolder 属性，便于前端区分是文件还是文件夹
     return new Response(JSON.stringify({
-        filename: fileData.filename,
-        size: fileData.size,
-        isFolder: !!fileData.isFolder,
-        needPassword: hasPassword
+      filename: fileData.filename,
+      size: fileData.size,
+      isFolder: !!fileData.isFolder,
+      needPassword: !!shareData.password
     }), { headers: { "Content-Type": "application/json" } });
 
   } catch (error) {
@@ -43,50 +35,47 @@ export async function onRequestPost(context) {
     const { id, password } = await request.json();
     if (!id) return new Response(JSON.stringify({ error: "缺少分享 ID" }), { status: 400 });
 
-    const shareDataStr = await env.TEACHERMATE_OSS_KV.get(`SHARE_${id}`);
-    if (!shareDataStr) return new Response(JSON.stringify({ error: "分享链接不存在或已失效" }), { status: 404 });
+    const shareData = await readShare(env, id);
+    if (!shareData) return new Response(JSON.stringify({ error: "分享链接不存在或已失效" }), { status: 404 });
 
-    let fileId, realPassword = null;
-    try {
-        const shareData = JSON.parse(shareDataStr);
-        fileId = shareData.fileId;
-        realPassword = shareData.password;
-    } catch(e) { fileId = shareDataStr; }
-
-    if (realPassword && realPassword !== password) {
-        return new Response(JSON.stringify({ error: "提取码错误" }), { status: 403 });
+    if (shareData.password && shareData.password !== password) {
+      return new Response(JSON.stringify({ error: "提取码错误" }), { status: 403 });
     }
 
-    const fileDataStr = await env.TEACHERMATE_OSS_KV.get(fileId);
+    const fileDataStr = await env.TEACHERMATE_OSS_KV.get(shareData.fileId);
     if (!fileDataStr) return new Response(JSON.stringify({ error: "源目录/文件已被删除" }), { status: 404 });
 
     const fileData = JSON.parse(fileDataStr);
 
-    // 新增核心逻辑：如果是文件夹，我们需要获取该目录下所有的子文件/文件夹
+    // 如果分享的是文件夹，聚合归属人个人空间内该目录下所有的子文件/文件夹
     if (fileData.isFolder) {
-        // 计算当前文件夹的全路径，例如 name为"photos", path为"/", 则 fullPath 为 "/photos/"
-        const basePath = fileData.path === '/' ? '' : fileData.path;
-        const fullPath = `${basePath}/${fileData.filename}/`.replace(/\/\//g, '/');
-        
-        const list = await env.TEACHERMATE_OSS_KV.list({ prefix: "FILE_" });
-        let children = [];
-        
-        for (const key of list.keys) {
-            const childStr = await env.TEACHERMATE_OSS_KV.get(key.name);
-            if (childStr) {
-                const childData = JSON.parse(childStr);
-                
-                // 【修复核心】统一补全子文件/子目录的缺失字段
-                childData.path = childData.path || "/";
-                childData.isFolder = !!childData.isFolder;
-                
-                if (childData.path.startsWith(fullPath)) {
-                    children.push({ id: key.name, ...childData });
-                }
-            }
-        }
-        fileData.children = children;
-        fileData.fullPath = fullPath;
+      // 计算当前文件夹的全路径，例如 name为"photos", path为"/", 则 fullPath 为 "/photos/"
+      const basePath = fileData.path === '/' ? '' : fileData.path;
+      const fullPath = `${basePath}/${fileData.filename}/`.replace(/\/\//g, '/');
+
+      const keys = [
+        ...await listAllKeys(env.TEACHERMATE_OSS_KV, `user:${shareData.owner}:file:`),
+        ...await listAllKeys(env.TEACHERMATE_OSS_KV, `user:${shareData.owner}:dir:`),
+      ];
+      let children = [];
+
+      for (const key of keys) {
+        const childStr = await env.TEACHERMATE_OSS_KV.get(key);
+        if (!childStr) continue;
+        try {
+          const childData = JSON.parse(childStr);
+
+          // 统一补全子文件/子目录的缺失字段
+          childData.path = childData.path || "/";
+          childData.isFolder = !!childData.isFolder;
+
+          if (childData.path.startsWith(fullPath)) {
+            children.push({ id: key, ...childData });
+          }
+        } catch (e) { continue; }
+      }
+      fileData.children = children;
+      fileData.fullPath = fullPath;
     }
 
     return new Response(JSON.stringify(fileData), { headers: { "Content-Type": "application/json" } });
@@ -94,4 +83,29 @@ export async function onRequestPost(context) {
   } catch (error) {
     return new Response(JSON.stringify({ error: "内部错误" }), { status: 500 });
   }
+}
+
+// 读取分享记录，格式不合法一律视为已失效
+async function readShare(env, shareId) {
+  const shareDataStr = await env.TEACHERMATE_OSS_KV.get(`share:${shareId}`);
+  if (!shareDataStr) return null;
+  try {
+    const shareData = JSON.parse(shareDataStr);
+    return shareData?.fileId ? shareData : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// KV list 单页最多返回 1000 条，这里通过游标翻页拿全量
+async function listAllKeys(kv, prefix) {
+  const keys = [];
+  let cursor;
+  while (true) {
+    const page = await kv.list({ prefix, cursor });
+    for (const k of page.keys) keys.push(k.name);
+    if (page.list_complete) break;
+    cursor = page.cursor;
+  }
+  return keys;
 }
