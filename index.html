@@ -2,86 +2,259 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>NexaboxDrive</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mdui@1.0.2/dist/css/mdui.min.css">
     <style>
-        body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
-        .card { border: 1px solid #ccc; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
-        button { padding: 8px 15px; cursor: pointer; margin-right: 5px; }
-        #log { white-space: pre-wrap; background: #f4f4f4; padding: 10px; font-size: 12px; max-height: 200px; overflow-y: auto;}
-        .folder-link { font-weight: bold; text-decoration: none; color: #0078d4; cursor: pointer; }
-        .folder-link:hover { text-decoration: underline; }
-        ul { list-style-type: none; padding-left: 0; }
-        li { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px dashed #eee; }
-        .path-info { color: #888; font-size: 12px; margin-left: 10px; }
-        .tab-btn { border: 1px solid #0078d4; background: #fff; color: #0078d4; border-radius: 4px; }
-        .tab-btn.tab-active { background: #0078d4; color: #fff; }
+        #log { white-space: pre-wrap; background: #f5f5f5; padding: 10px; font-size: 12px;
+               font-family: Consolas, Menlo, monospace; max-height: 220px; overflow-y: auto;
+               border-radius: 4px; margin: 0; }
+        .bc-sep { font-size: 16px; opacity: .45; vertical-align: middle; }
+        .mdui-list-item { cursor: default; }
     </style>
 </head>
-<body>
-    <h1>NexaboxDrive</h1>
+<body class="mdui-theme-primary-indigo mdui-theme-accent-indigo mdui-loaded">
 
-    <div style="margin-bottom: 15px;">
-        <button id="tabPersonal" class="tab-btn tab-active" onclick="switchScope('personal')">个人空间</button>
-        <button id="tabPool" class="tab-btn" onclick="switchScope('pool')">资源池（共享）</button>
+    <!-- 顶部应用栏 -->
+    <div class="mdui-appbar">
+        <div class="mdui-toolbar">
+            <a href="javascript:;" class="mdui-btn mdui-btn-icon" title="NexaboxDrive">
+                <i class="mdui-icon material-icons">cloud</i>
+            </a>
+            <span class="mdui-typo-title">NexaboxDrive</span>
+            <div class="mdui-toolbar-spacer"></div>
+            <span class="mdui-chip" title="当前登录用户">
+                <i class="mdui-icon material-icons">person</i>
+                <span class="mdui-chip-title" id="currentUser">加载中…</span>
+            </span>
+        </div>
     </div>
 
-    <div class="card" style="background-color: #f9f9f9;">
-        <h3 style="margin-top: 0;">当前路径: <span id="pathDisplay">/</span></h3>
-        <button id="btnGoUp" onclick="goUp()" style="display: none;">返回上一级</button>
-        <button onclick="createFolder()">新建文件夹</button>
-        <button onclick="loadFiles()">刷新列表</button>
-        <button id="btnPurgeLegacy" onclick="purgeLegacyData()" style="display:none; color:#d83b01;">清空旧版共享数据</button>
+    <div class="mdui-container">
 
-        <div style="margin-top: 15px; display: flex; gap: 10px;">
-            <input type="text" id="searchInput" placeholder="搜索当前空间内的文件或文件夹..." style="flex: 1; padding: 5px;">
-            <button onclick="searchFiles()">搜索</button>
+        <!-- 空间切换 -->
+        <div class="mdui-btn-group mdui-m-t-3" style="box-shadow:0 1px 4px rgba(0,0,0,.15);">
+            <button id="tabPersonal" class="mdui-btn mdui-btn-active mdui-ripple" onclick="switchScope('personal')">
+                <i class="mdui-icon material-icons">person</i> 个人空间
+            </button>
+            <button id="tabPool" class="mdui-btn mdui-ripple" onclick="switchScope('pool')">
+                <i class="mdui-icon material-icons">group_work</i> 资源池（共享）
+            </button>
         </div>
 
-        <p style="color:#888; font-size:12px; margin:10px 0 0;">当前用户：<span id="currentUser" style="font-weight:bold; color:#333;">加载中...</span>（个人空间互相独立，资源池全员共享）</p>
-    </div>
+        <!-- 路径与工具卡片 -->
+        <div class="mdui-card mdui-m-t-3">
+            <div class="mdui-card-content">
+                <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;">
+                    <div id="breadcrumb" style="display:flex;align-items:center;flex-wrap:wrap;flex:1;min-width:220px;"></div>
+                    <span id="searchChip" class="mdui-chip" style="display:none;cursor:pointer;" title="点击退出搜索" onclick="exitSearch()">
+                        <i class="mdui-icon material-icons">search</i>
+                        <span class="mdui-chip-title" id="searchChipTitle"></span>
+                        <i class="mdui-icon material-icons">close</i>
+                    </span>
+                    <button id="btnGoUp" class="mdui-btn mdui-btn-icon mdui-ripple" title="返回上一级" onclick="goUp()" style="display:none;">
+                        <i class="mdui-icon material-icons">arrow_upward</i>
+                    </button>
+                    <button class="mdui-btn mdui-btn-icon mdui-ripple" title="刷新列表" onclick="loadFiles()">
+                        <i class="mdui-icon material-icons">refresh</i>
+                    </button>
+                    <button class="mdui-btn mdui-btn-icon mdui-ripple" title="新建文件夹" onclick="createFolder()">
+                        <i class="mdui-icon material-icons">create_new_folder</i>
+                    </button>
+                    <button id="btnPurgeLegacy" class="mdui-btn mdui-btn-icon mdui-ripple" title="清空旧版共享数据"
+                            style="display:none;color:#f44336;" onclick="purgeLegacyData()">
+                        <i class="mdui-icon material-icons">delete_forever</i>
+                    </button>
+                </div>
 
-    <div class="card">
-        <h3>上传到当前目录</h3>
-        
-        <div style="margin-bottom: 10px;">
-            <label style="font-weight: bold; display: inline-block; width: 100px;">多文件直传：</label>
-            <input type="file" id="fileInput" multiple />
-            <button onclick="startUpload(false)">开始上传文件</button>
+                <div class="mdui-divider mdui-m-y-2"></div>
+
+                <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+                    <div class="mdui-textfield" style="flex:1;min-width:200px;padding-top:0;">
+                        <input id="searchInput" class="mdui-textfield-input" type="text"
+                               placeholder="搜索当前空间内的文件或文件夹…"
+                               onkeydown="if(event.key==='Enter')searchFiles()">
+                    </div>
+                    <button class="mdui-btn mdui-btn-raised mdui-ripple" onclick="searchFiles()">
+                        <i class="mdui-icon material-icons">search</i> 搜索
+                    </button>
+                </div>
+                <p class="mdui-typo-caption mdui-text-color-black-secondary" style="margin:8px 0 0;">
+                    个人空间互相独立，资源池全员共享；资源池中的内容会显示上传者。
+                </p>
+            </div>
         </div>
-        
-        <div style="margin-bottom: 10px;">
-            <label style="font-weight: bold; display: inline-block; width: 100px;">文件夹上传：</label>
-            <input type="file" id="folderInput" webkitdirectory multiple />
-            <button onclick="startUpload(true)">开始上传文件夹</button>
+
+        <!-- 上传卡片 -->
+        <div class="mdui-card mdui-m-t-3">
+            <div class="mdui-card-primary">
+                <div class="mdui-card-primary-title">上传到当前目录</div>
+                <div class="mdui-card-primary-subtitle" id="uploadTarget">个人空间 /</div>
+            </div>
+            <div class="mdui-card-content">
+                <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:12px;">
+                    <input type="file" id="fileInput" multiple style="display:none;">
+                    <button class="mdui-btn mdui-ripple" onclick="document.getElementById('fileInput').click()">
+                        <i class="mdui-icon material-icons">attach_file</i> 选择文件
+                    </button>
+                    <span id="filePickLabel" class="mdui-typo-caption mdui-text-color-black-secondary">未选择文件</span>
+                    <button class="mdui-btn mdui-btn-raised mdui-color-theme-accent mdui-ripple" onclick="startUpload(false)">
+                        <i class="mdui-icon material-icons">cloud_upload</i> 上传文件
+                    </button>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
+                    <input type="file" id="folderInput" webkitdirectory multiple style="display:none;">
+                    <button class="mdui-btn mdui-ripple" onclick="document.getElementById('folderInput').click()">
+                        <i class="mdui-icon material-icons">folder_open</i> 选择文件夹
+                    </button>
+                    <span id="folderPickLabel" class="mdui-typo-caption mdui-text-color-black-secondary">未选择文件夹</span>
+                    <button class="mdui-btn mdui-btn-raised mdui-color-theme-accent mdui-ripple" onclick="startUpload(true)">
+                        <i class="mdui-icon material-icons">drive_folder_upload</i> 上传文件夹
+                    </button>
+                </div>
+                <div class="mdui-progress mdui-m-t-3" id="uploadProgressBar" style="display:none;">
+                    <div class="mdui-progress-determinate" id="uploadProgressFill" style="width:0%"></div>
+                </div>
+                <p class="mdui-typo-caption" id="uploadStatus" style="margin:10px 0 0;color:#3f51b5;font-weight:bold;">就绪</p>
+            </div>
         </div>
 
-        <p id="uploadStatus" style="color: #0078d4; font-weight: bold;">就绪</p>
+        <!-- 文件列表卡片 -->
+        <div class="mdui-card mdui-m-t-3">
+            <div class="mdui-card-primary">
+                <div class="mdui-card-primary-title" id="listTitle">文件列表</div>
+            </div>
+            <div class="mdui-card-content" style="padding-bottom:8px;">
+                <ul class="mdui-list" id="fileList"></ul>
+            </div>
+        </div>
+
+        <!-- 运行日志卡片 -->
+        <div class="mdui-card mdui-m-t-3 mdui-m-b-4">
+            <div class="mdui-card-primary">
+                <div class="mdui-card-primary-title">运行日志</div>
+            </div>
+            <div class="mdui-card-content">
+                <div id="log"></div>
+            </div>
+        </div>
+
     </div>
 
-    <div class="card">
-        <h3>文件列表</h3>
-        <ul id="fileList"></ul>
-    </div>
-
-    <h4>运行日志</h4>
-    <div id="log"></div>
-
-  <script>
-        const ACCOUNT_URL = 'https://accounts.nexabox.de'; 
+    <script src="https://cdn.jsdelivr.net/npm/mdui@1.0.2/dist/js/mdui.min.js"></script>
+    <script>
+        const ACCOUNT_URL = 'https://accounts.nexabox.de';
         const APP_NAME = 'NexaboxDrive';
         let currentPath = '/';
-        
+        let currentScope = 'personal';   // personal=个人空间 pool=共享资源池
+        let searchMode = false;          // 当前是否处于搜索结果页
+
         // 缓存当前展示的列表数据（支持跨目录的搜索结果下载）
         let currentDataList = [];
 
-        // 当前所处空间：personal=个人空间 pool=共享资源池
-        let currentScope = 'personal';
+        // ---------- 基础工具 ----------
+        function escapeHtml(str) {
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                               .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
 
+        function log(msg) {
+            const logDiv = document.getElementById('log');
+            logDiv.innerText += msg + '\n';
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function checkAuth() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const tokenFromUrl = urlParams.get('token');
+            if (tokenFromUrl) {
+                localStorage.setItem('pan_token', tokenFromUrl);
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+            const token = localStorage.getItem('pan_token');
+            if (!token) {
+                const currentUrl = encodeURIComponent(window.location.href);
+                window.location.href = `${ACCOUNT_URL}/login.html?app=${APP_NAME}&redirect=${currentUrl}`;
+                return null;
+            }
+            return token;
+        }
+
+        const token = checkAuth();
+
+        async function apiFetch(url, options = {}) {
+            if (!options.headers) options.headers = {};
+            options.headers['Authorization'] = `Bearer ${token}`;
+            const res = await fetch(url, options);
+            // 仅 401 视为登录失效；403 属于业务错误（如无权限），交给调用方提示
+            if (res.status === 401) {
+                mdui.alert('登录已过期，请重新登录！', '提示', function () {
+                    localStorage.removeItem('pan_token');
+                    window.location.reload();
+                });
+            }
+            return res;
+        }
+
+        // ---------- Service Worker ----------
+        async function initServiceWorker() {
+            if ('serviceWorker' in navigator) {
+                try {
+                    await navigator.serviceWorker.register('/sw.js');
+                    log('Service Worker 注册成功！');
+                    if (!navigator.serviceWorker.controller) {
+                        await new Promise(resolve => navigator.serviceWorker.addEventListener('controllerchange', resolve));
+                    }
+                } catch (err) { log(`Service Worker 注册失败: ${err}`); }
+            }
+        }
+
+        window.onload = async () => {
+            await initServiceWorker();
+            loadUserInfo();
+            loadFiles();
+        };
+
+        // ---------- 用户信息 ----------
+        async function loadUserInfo() {
+            try {
+                const res = await apiFetch('/api/me');
+                const data = await res.json();
+                document.getElementById('currentUser').textContent = data.username || '未知';
+                if ((data.permissions || []).includes('all')) {
+                    document.getElementById('btnPurgeLegacy').style.display = 'inline-flex';
+                }
+            } catch (e) { document.getElementById('currentUser').textContent = '获取失败'; }
+        }
+
+        // 管理员操作：一次性清空旧版共享空间的 KV 数据（FILE_ / SHARE_ 前缀）
+        function purgeLegacyData() {
+            mdui.confirm(
+                '将永久删除旧版共享空间的全部数据（FILE_ / SHARE_ 记录），此操作不可恢复。确定继续吗？',
+                '清空旧版共享数据',
+                async function () {
+                    try {
+                        const res = await apiFetch('/api/purge-legacy', { method: 'POST' });
+                        const data = await res.json();
+                        if (data.success) {
+                            log(`[系统] 旧版共享数据已清空，共删除 ${data.deleted} 条记录`);
+                            mdui.snackbar(`清理完成，共删除 ${data.deleted} 条旧数据`);
+                        } else {
+                            mdui.snackbar(data.error || '清理失败');
+                        }
+                    } catch (e) { mdui.snackbar('清理请求失败'); }
+                },
+                function () {},
+                { confirmText: '确认清空', cancelText: '取消' }
+            );
+        }
+
+        // ---------- 空间切换与分流保存 ----------
         function switchScope(scope) {
             currentScope = scope;
             currentPath = '/';
-            document.getElementById('tabPersonal').classList.toggle('tab-active', scope === 'personal');
-            document.getElementById('tabPool').classList.toggle('tab-active', scope === 'pool');
+            document.getElementById('tabPersonal').classList.toggle('mdui-btn-active', scope === 'personal');
+            document.getElementById('tabPool').classList.toggle('mdui-btn-active', scope === 'pool');
             loadFiles();
         }
 
@@ -107,106 +280,39 @@
                 body: JSON.stringify(payload)
             });
         }
-    
-        function checkAuth() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const tokenFromUrl = urlParams.get('token');
-            if (tokenFromUrl) {
-                localStorage.setItem('pan_token', tokenFromUrl);
-                window.history.replaceState({}, document.title, window.location.pathname);
-            }
-            const token = localStorage.getItem('pan_token');
-            if (!token) {
-                const currentUrl = encodeURIComponent(window.location.href);
-                window.location.href = `${ACCOUNT_URL}/login.html?app=${APP_NAME}&redirect=${currentUrl}`;
-                return null;
-            }
-            return token;
+
+        // ---------- 面包屑与导航 ----------
+        function renderBreadcrumb() {
+            const bc = document.getElementById('breadcrumb');
+            bc.innerHTML = '';
+            const mk = (label, targetPath, isCurrent) => {
+                const btn = document.createElement('button');
+                btn.className = 'mdui-btn mdui-btn-dense mdui-ripple';
+                btn.style.textTransform = 'none';
+                if (isCurrent) btn.classList.add('mdui-text-color-theme-text');
+                btn.textContent = label;
+                if (targetPath !== null) {
+                    btn.onclick = () => { currentPath = targetPath; loadFiles(); };
+                } else {
+                    btn.disabled = true;
+                }
+                return btn;
+            };
+            bc.appendChild(mk('根目录', '/'));
+            const parts = currentPath.split('/').filter(p => p !== '');
+            let acc = '';
+            parts.forEach((p, i) => {
+                acc += '/' + p;
+                const isCurrent = i === parts.length - 1;
+                const sep = document.createElement('i');
+                sep.className = 'mdui-icon material-icons bc-sep';
+                sep.textContent = 'chevron_right';
+                bc.appendChild(sep);
+                bc.appendChild(mk(p, isCurrent ? null : acc + '/', isCurrent));
+            });
         }
-    
-        const token = checkAuth();
-    
-        async function apiFetch(url, options = {}) {
-            if (!options.headers) options.headers = {};
-            options.headers['Authorization'] = `Bearer ${token}`; 
-            
-            const res = await fetch(url, options);
-            if (res.status === 401 || res.status === 403) {
-                alert('登录已过期或无访问权限，请重新登录！');
-                localStorage.removeItem('pan_token');
-                window.location.reload();
-            }
-            return res;
-        }
-      
-      const CHUNK_SIZE = 250 * 1024 * 1024; 
-      const OSS_BASE_URL = 'https://teachermate.oss-cn-qingdao.aliyuncs.com/';
-  
-      function log(msg) {
-          const logDiv = document.getElementById('log');
-          logDiv.innerText += msg + '\n';
-          logDiv.scrollTop = logDiv.scrollHeight;
-      }
-  
-      async function initServiceWorker() {
-          if ('serviceWorker' in navigator) {
-              try {
-                  await navigator.serviceWorker.register('/sw.js');
-                  log("Service Worker 注册成功！");
-                  if (!navigator.serviceWorker.controller) {
-                      await new Promise(resolve => navigator.serviceWorker.addEventListener('controllerchange', resolve));
-                  }
-              } catch (err) { log(`Service Worker 注册失败: ${err}`); }
-          }
-      }
-      
-      window.onload = async () => {
-          await initServiceWorker();
-          loadUserInfo();
-          loadFiles();
-      };
 
-      // 加载当前登录用户信息，管理员显示「清空旧版共享数据」入口
-      async function loadUserInfo() {
-          try {
-              const res = await apiFetch('/api/me');
-              const data = await res.json();
-              document.getElementById('currentUser').innerText = data.username || '未知';
-              if ((data.permissions || []).includes('all')) {
-                  document.getElementById('btnPurgeLegacy').style.display = 'inline-block';
-              }
-          } catch (e) { document.getElementById('currentUser').innerText = '获取失败'; }
-      }
-
-      // 管理员操作：一次性清空旧版共享空间的 KV 数据（FILE_ / SHARE_ 前缀）
-      async function purgeLegacyData() {
-          if (!confirm('确认要彻底清空旧版共享空间的全部数据吗？此操作不可恢复！')) return;
-          try {
-              const res = await apiFetch('/api/purge-legacy', { method: 'POST' });
-              const data = await res.json();
-              if (data.success) {
-                  log(`[系统] 旧版共享数据已清空，共删除 ${data.deleted} 条记录`);
-                  alert(`清理完成，共删除 ${data.deleted} 条旧数据`);
-              } else alert(data.error || '清理失败');
-          } catch (e) { alert('清理请求失败'); }
-      }
-  
-      // --- 文件夹与路径导航逻辑 ---
-      async function createFolder() {
-          const folderName = prompt("请输入文件夹名称：");
-          if (!folderName) return;
-          try {
-              const res = await saveItemRecord({ name: folderName, filename: folderName, path: currentPath, isFolder: true });
-              const data = await res.json();
-              if (data.success) {
-                  log(`文件夹 ${folderName} 创建成功`);
-                  loadFiles();
-              } else alert(data.error);
-          } catch (e) { alert("创建文件夹失败"); }
-      }
-
-      function enterFolder(folderName, forcePath = null) {
-            // 增加 forcePath !== 'null' 的判断，防止意外的字符串转换
+        function enterFolder(folderName, forcePath = null) {
             if (forcePath && forcePath !== 'null') {
                 currentPath = forcePath === '/' ? `/${folderName}/` : `${forcePath}${folderName}/`;
             } else {
@@ -215,227 +321,331 @@
             loadFiles();
         }
 
-      function goUp() {
-          // 如果当前处于搜索结果页，点击返回直接重置为原先的目录
-          if (document.getElementById('pathDisplay').innerText.startsWith('搜索')) {
-              loadFiles();
-              return;
-          }
-          if (currentPath === '/') return;
-          const parts = currentPath.split('/').filter(p => p !== '');
-          parts.pop(); 
-          currentPath = parts.length === 0 ? '/' : '/' + parts.join('/') + '/';
-          loadFiles();
-      }
+        function goUp() {
+            // 搜索结果页点击返回，直接回到原目录
+            if (searchMode) return loadFiles();
+            if (currentPath === '/') return;
+            const parts = currentPath.split('/').filter(p => p !== '');
+            parts.pop();
+            currentPath = parts.length === 0 ? '/' : '/' + parts.join('/') + '/';
+            loadFiles();
+        }
 
-      // --- 核心修改：支持多文件和保留层级的文件夹批量上传 ---
-      async function startUpload(isFolderUpload) {
-          const inputId = isFolderUpload ? 'folderInput' : 'fileInput';
-          const fileElement = document.getElementById(inputId);
-          const files = fileElement.files;
-          
-          if (!files.length) return alert("请先选择内容！");
-          
-          document.getElementById('uploadStatus').innerText = `准备上传 ${files.length} 个文件...`;
-          document.getElementById('uploadStatus').style.color = 'orange';
+        function exitSearch() { loadFiles(); }
 
-          // 记录本次上传中已经动态创建过的虚拟文件夹，防止发重复请求
-          const sessionCreatedDirs = new Set();
-  
-          for (let fIdx = 0; fIdx < files.length; fIdx++) {
-              const file = files[fIdx];
-              const originalName = file.name;
-              
-              // 决定文件的最终目标路径
-              let targetPath = currentPath;
-              
-              // 如果是上传文件夹，webkitRelativePath 会包含类似于 "图片/2024/logo.png" 的相对层级
-              if (isFolderUpload && file.webkitRelativePath) {
-                  const pathParts = file.webkitRelativePath.split('/');
-                  pathParts.pop(); // 剔除文件名，保留纯目录数组
-                  const relPath = pathParts.join('/'); 
-                  
-                  targetPath = currentPath === '/' ? `/${relPath}/` : `${currentPath}${relPath}/`;
-                  
-                  // 逐级检查并创建虚拟文件夹记录
-                  let incrementalPath = currentPath;
-                  for (const part of pathParts) {
-                      const newPath = incrementalPath === '/' ? `/${part}/` : `${incrementalPath}${part}/`;
-                      if (!sessionCreatedDirs.has(newPath)) {
-                          await saveItemRecord({ name: part, filename: part, path: incrementalPath, isFolder: true });
-                          sessionCreatedDirs.add(newPath);
-                          log(`[系统] 自动建立虚拟目录层级: ${newPath}`);
-                      }
-                      incrementalPath = newPath;
-                  }
-              }
+        // ---------- 新建文件夹 ----------
+        function createFolder() {
+            mdui.prompt('请输入文件夹名称：', '新建文件夹', function (value) {
+                const folderName = (value || '').trim();
+                if (!folderName) return;
+                saveItemRecord({ name: folderName, filename: folderName, path: currentPath, isFolder: true })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            log(`文件夹 ${folderName} 创建成功`);
+                            mdui.snackbar(`文件夹「${folderName}」创建成功`);
+                            loadFiles();
+                        } else { mdui.snackbar(data.error || '创建失败'); }
+                    })
+                    .catch(() => mdui.snackbar('创建文件夹失败'));
+            }, function () {}, { confirmText: '创建', cancelText: '取消' });
+        }
 
-              const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-              const chunkUrls = [];
-              
-              log(`[${fIdx+1}/${files.length}] 开始上传至 ${targetPath} : ${originalName}`);
-              document.getElementById('uploadStatus').innerText = `进度 (${fIdx+1}/${files.length}): 正在上传 ${originalName} (0/${totalChunks})`;
-  
-              for (let i = 0; i < totalChunks; i++) {
-                  const start = i * CHUNK_SIZE;
-                  const end = Math.min(start + CHUNK_SIZE, file.size);
-                  const chunkBlob = file.slice(start, end, 'image/png');
-                  const chunkIndex = String(i + 1).padStart(3, '0');
-                  const fakeFileName = `${originalName}.${chunkIndex}.png`;
-                  
-                  try {
-                      const sigRes = await apiFetch('/api/signature');
-                      const ossData = await sigRes.json();
-                      if (!ossData.signature) throw new Error("获取签名失败");
-  
-                      const timestamp = new Date().getTime();
-                      const nameWithoutExt = fakeFileName.substring(0, fakeFileName.lastIndexOf('.')); 
-                      const ossKey = `${nameWithoutExt}-${timestamp}-${fakeFileName}`;
-  
-                      const formData = new FormData();
-                      formData.append('Signature', ossData.signature);
-                      formData.append('OSSAccessKeyId', ossData.accessKeyId);
-                      formData.append('policy', ossData.policy);
-                      formData.append('success_action_status', '200');
-                      formData.append('key', ossKey);
-                      formData.append('file', chunkBlob, fakeFileName);
-  
-                      const ossHost = ossData.host || OSS_BASE_URL;
-                      const uploadRes = await apiFetch(ossHost, { method: 'POST', body: formData });
-  
-                      if (uploadRes.status === 200 || uploadRes.status === 204) {
-                          chunkUrls.push(`${OSS_BASE_URL}${ossKey}`);
-                          document.getElementById('uploadStatus').innerText = `进度 (${fIdx+1}/${files.length}): 正在上传 ${originalName} (${i+1}/${totalChunks})`;
-                      } else {
-                          throw new Error(`OSS 上传失败: ${uploadRes.status}`);
-                      }
-                  } catch (e) {
-                      log(`[错误] ${originalName} 分块上传中断: ${e.message}`);
-                      break; // 跳出当前文件的切片循环，继续上传下一个文件
-                  }
-              }
-              
-              // 只有所有切片都完整收集，才写入元数据（按当前空间分流）
-              if (chunkUrls.length === totalChunks) {
-                  await saveItemRecord({
-                      filename: originalName,
-                      size: file.size,
-                      chunks: chunkUrls,
-                      path: targetPath
-                  });
-              }
-          }
-  
-          document.getElementById('uploadStatus').innerText = "✅ 批处理上传完成！";
-          document.getElementById('uploadStatus').style.color = 'green';
-          fileElement.value = ""; 
-          loadFiles(); 
-      }
-      
-      // --- 新增：全局搜索接口联动 ---
-      async function searchFiles() {
-          const keyword = document.getElementById('searchInput').value.trim();
-          if (!keyword) return loadFiles(); 
+        // ---------- 上传（分片，保留原逻辑） ----------
+        const CHUNK_SIZE = 250 * 1024 * 1024;
+        const OSS_BASE_URL = 'https://teachermate.oss-cn-qingdao.aliyuncs.com/';
 
-          document.getElementById('pathDisplay').innerText = `搜索结果: "${keyword}"`;
-          document.getElementById('btnGoUp').style.display = 'inline-block'; 
+        document.getElementById('fileInput').addEventListener('change', e => {
+            const n = e.target.files.length;
+            document.getElementById('filePickLabel').textContent = n ? `已选择 ${n} 个文件` : '未选择文件';
+        });
+        document.getElementById('folderInput').addEventListener('change', e => {
+            const n = e.target.files.length;
+            document.getElementById('folderPickLabel').textContent = n ? `已选择 ${n} 个文件` : '未选择文件夹';
+        });
 
-          try {
-              // 资源池模式下搜索共享空间，个人空间模式只搜自己的文件
-              const scopeParam = currentScope === 'pool' ? '&scope=pool' : '';
-              const res = await apiFetch(`/api/search?keyword=${encodeURIComponent(keyword)}${scopeParam}`);
-              currentDataList = await res.json();
-              renderFileList(currentDataList, true); 
-          } catch (e) { alert("搜索失败"); }
-      }
+        function setUploadProgress(pct) {
+            document.getElementById('uploadProgressBar').style.display = 'block';
+            document.getElementById('uploadProgressFill').style.width = pct + '%';
+        }
 
-      // --- 加载文件列表 ---
-      async function loadFiles() {
-            document.getElementById('pathDisplay').innerText = currentPath;
-            document.getElementById('btnGoUp').style.display = currentPath === '/' ? 'none' : 'inline-block';
-            document.getElementById('searchInput').value = ''; 
+        async function startUpload(isFolderUpload) {
+            const inputId = isFolderUpload ? 'folderInput' : 'fileInput';
+            const fileElement = document.getElementById(inputId);
+            const files = fileElement.files;
+
+            if (!files.length) return mdui.alert('请先选择内容！', '提示');
+
+            const statusEl = document.getElementById('uploadStatus');
+            statusEl.innerText = `准备上传 ${files.length} 个文件...`;
+            statusEl.style.color = 'orange';
+            setUploadProgress(0);
+
+            // 记录本次上传中已经动态创建过的虚拟文件夹，防止发重复请求
+            const sessionCreatedDirs = new Set();
+
+            for (let fIdx = 0; fIdx < files.length; fIdx++) {
+                const file = files[fIdx];
+                const originalName = file.name;
+
+                // 决定文件的最终目标路径
+                let targetPath = currentPath;
+
+                // 文件夹上传时，webkitRelativePath 包含 "图片/2024/logo.png" 形式的相对层级
+                if (isFolderUpload && file.webkitRelativePath) {
+                    const pathParts = file.webkitRelativePath.split('/');
+                    pathParts.pop(); // 剔除文件名，保留纯目录数组
+
+                    // 逐级检查并创建虚拟文件夹记录
+                    let incrementalPath = currentPath;
+                    for (const part of pathParts) {
+                        const newPath = incrementalPath === '/' ? `/${part}/` : `${incrementalPath}${part}/`;
+                        if (!sessionCreatedDirs.has(newPath)) {
+                            await saveItemRecord({ name: part, filename: part, path: incrementalPath, isFolder: true });
+                            sessionCreatedDirs.add(newPath);
+                            log(`[系统] 自动建立虚拟目录层级: ${newPath}`);
+                        }
+                        incrementalPath = newPath;
+                    }
+                    targetPath = incrementalPath;
+                }
+
+                const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+                const chunkUrls = [];
+
+                log(`[${fIdx + 1}/${files.length}] 开始上传至 ${targetPath} : ${originalName}`);
+                statusEl.innerText = `进度 (${fIdx + 1}/${files.length}): 正在上传 ${originalName} (0/${totalChunks})`;
+
+                for (let i = 0; i < totalChunks; i++) {
+                    const start = i * CHUNK_SIZE;
+                    const end = Math.min(start + CHUNK_SIZE, file.size);
+                    const chunkBlob = file.slice(start, end, 'image/png');
+                    const chunkIndex = String(i + 1).padStart(3, '0');
+                    const fakeFileName = `${originalName}.${chunkIndex}.png`;
+
+                    try {
+                        const sigRes = await apiFetch('/api/signature');
+                        const ossData = await sigRes.json();
+                        if (!ossData.signature) throw new Error('获取签名失败');
+
+                        const timestamp = new Date().getTime();
+                        const nameWithoutExt = fakeFileName.substring(0, fakeFileName.lastIndexOf('.'));
+                        const ossKey = `${nameWithoutExt}-${timestamp}-${fakeFileName}`;
+
+                        const formData = new FormData();
+                        formData.append('Signature', ossData.signature);
+                        formData.append('OSSAccessKeyId', ossData.accessKeyId);
+                        formData.append('policy', ossData.policy);
+                        formData.append('success_action_status', '200');
+                        formData.append('key', ossKey);
+                        formData.append('file', chunkBlob, fakeFileName);
+
+                        const ossHost = ossData.host || OSS_BASE_URL;
+                        const uploadRes = await apiFetch(ossHost, { method: 'POST', body: formData });
+
+                        if (uploadRes.status === 200 || uploadRes.status === 204) {
+                            chunkUrls.push(`${OSS_BASE_URL}${ossKey}`);
+                            statusEl.innerText = `进度 (${fIdx + 1}/${files.length}): 正在上传 ${originalName} (${i + 1}/${totalChunks})`;
+                            setUploadProgress(((fIdx + (i + 1) / totalChunks) / files.length) * 100);
+                        } else {
+                            throw new Error(`OSS 上传失败: ${uploadRes.status}`);
+                        }
+                    } catch (e) {
+                        log(`[错误] ${originalName} 分块上传中断: ${e.message}`);
+                        break; // 跳出当前文件的切片循环，继续上传下一个文件
+                    }
+                }
+
+                // 只有所有切片都完整收集，才写入元数据（按当前空间分流）
+                if (chunkUrls.length === totalChunks) {
+                    await saveItemRecord({
+                        filename: originalName,
+                        size: file.size,
+                        chunks: chunkUrls,
+                        path: targetPath
+                    });
+                }
+            }
+
+            setUploadProgress(100);
+            statusEl.innerText = '✅ 批处理上传完成！';
+            statusEl.style.color = 'green';
+            fileElement.value = '';
+            document.getElementById(isFolderUpload ? 'folderPickLabel' : 'filePickLabel').textContent =
+                isFolderUpload ? '未选择文件夹' : '未选择文件';
+            mdui.snackbar('批处理上传完成！');
+            loadFiles();
+        }
+
+        // ---------- 搜索 ----------
+        async function searchFiles() {
+            const keyword = document.getElementById('searchInput').value.trim();
+            if (!keyword) return loadFiles();
+
+            searchMode = true;
+            document.getElementById('searchChipTitle').textContent = `搜索: ${keyword}`;
+            document.getElementById('searchChip').style.display = 'inline-flex';
+            document.getElementById('btnGoUp').style.display = 'inline-flex';
+
+            try {
+                // 资源池模式下搜索共享空间，个人空间模式只搜自己的文件
+                const scopeParam = currentScope === 'pool' ? '&scope=pool' : '';
+                const res = await apiFetch(`/api/search?keyword=${encodeURIComponent(keyword)}${scopeParam}`);
+                const data = await res.json();
+                if (!Array.isArray(data)) throw new Error(data.error || '搜索失败');
+                currentDataList = data;
+                renderFileList(currentDataList, true);
+            } catch (e) {
+                mdui.snackbar(e.message || '搜索失败');
+            }
+        }
+
+        // ---------- 列表加载与渲染 ----------
+        async function loadFiles() {
+            searchMode = false;
+            document.getElementById('searchChip').style.display = 'none';
+            renderBreadcrumb();
+            document.getElementById('btnGoUp').style.display = currentPath === '/' ? 'none' : 'inline-flex';
+            document.getElementById('searchInput').value = '';
+            document.getElementById('uploadTarget').textContent =
+                (currentScope === 'pool' ? '资源池 ' : '个人空间 ') + currentPath;
+            document.getElementById('listTitle').textContent =
+                '文件列表 · ' + (currentScope === 'pool' ? '资源池' : '个人空间');
 
             const endpoint = currentScope === 'pool' ? '/api/pool' : '/api/files';
-            const res = await apiFetch(`${endpoint}?path=${encodeURIComponent(currentPath)}`);
-            currentDataList = await res.json();
-            renderFileList(currentDataList, false);
-      }
-      
-      // 抽离统一的 DOM 渲染逻辑
-      function renderFileList(files, isSearch = false) {
-          const list = document.getElementById('fileList');
-          list.innerHTML = '';
-            
-          if (files.length === 0) {
-              list.innerHTML = '<li style="color: #999;">无数据或暂未收录</li>';
-              return;
-          }
-  
-          files.forEach(f => {
-              const li = document.createElement('li');
-              const pathTag = isSearch ? `<span class="path-info">所在位置: ${f.path}</span>` : '';
-              const uploaderTag = (currentScope === 'pool' && f.uploader) ? `<span class="path-info">上传者: ${f.uploader}</span>` : '';
-
-            if (f.isFolder) {
-                li.innerHTML = `
-                    📁 <a class="folder-link" onclick="enterFolder('${f.filename}', ${isSearch ? `'${f.path}'` : 'null'})">${f.filename}</a>
-                    ${pathTag} ${uploaderTag}
-                    <button style="margin-top:5px; margin-left:10px;" onclick="createShare('${f.id}')">生成分享</button>
-                `;
-            } else {
-                  li.innerHTML = `
-                      📄 <strong>${f.filename}</strong> <span style="color:#666;font-size:14px;">(${(f.size/1024/1024).toFixed(2)} MB)</span>
-                      ${pathTag} ${uploaderTag} <br>
-                      <button style="margin-top:5px;" onclick="downloadStream('${f.id}')">流式下载</button>
-                      <button style="margin-top:5px;" onclick="createShare('${f.id}')">生成分享</button>
-                  `;
-              }
-              list.appendChild(li);
-          });
-      }
-    
-        async function createShare(fileId) {
-            const pwdInput = prompt("请输入提取码（选填，留空则为公开分享）：");
-            if (pwdInput === null) return; 
-            const password = pwdInput.trim();
             try {
-                const res = await apiFetch('/api/share', {
+                const res = await apiFetch(`${endpoint}?path=${encodeURIComponent(currentPath)}`);
+                const data = await res.json();
+                if (!Array.isArray(data)) throw new Error(data.error || '加载失败');
+                currentDataList = data;
+                renderFileList(currentDataList, false);
+            } catch (e) {
+                currentDataList = [];
+                renderFileList([], false);
+                mdui.snackbar(e.message || '加载文件列表失败');
+            }
+        }
+
+        function renderFileList(files, isSearch = false) {
+            const list = document.getElementById('fileList');
+            list.innerHTML = '';
+
+            if (files.length === 0) {
+                const empty = document.createElement('li');
+                empty.className = 'mdui-list-item mdui-ripple';
+                empty.style.justifyContent = 'center';
+                empty.style.pointerEvents = 'none';
+                empty.innerHTML = '<span class="mdui-typo-caption mdui-text-color-black-secondary">此目录暂无内容</span>';
+                list.appendChild(empty);
+                return;
+            }
+
+            const mkAction = (iconName, title, handler) => {
+                const btn = document.createElement('button');
+                btn.className = 'mdui-btn mdui-btn-icon mdui-ripple';
+                btn.title = title;
+                const ic = document.createElement('i');
+                ic.className = 'mdui-icon material-icons';
+                ic.textContent = iconName;
+                btn.appendChild(ic);
+                btn.addEventListener('click', e => { e.stopPropagation(); handler(); });
+                return btn;
+            };
+
+            files.forEach(f => {
+                const item = document.createElement('li');
+                item.className = 'mdui-list-item mdui-ripple';
+
+                // 头像图标：文件夹 / 文件
+                const avatar = document.createElement('i');
+                avatar.className = 'mdui-list-item-avatar mdui-icon material-icons';
+                avatar.textContent = f.isFolder ? 'folder' : 'insert_drive_file';
+                if (f.isFolder) avatar.style.background = '#e8eaf6';
+                item.appendChild(avatar);
+
+                // 内容区（textContent 输出，避免文件名注入 HTML）
+                const content = document.createElement('div');
+                content.className = 'mdui-list-item-content';
+                const title = document.createElement('div');
+                title.className = 'mdui-list-item-title';
+                title.textContent = f.filename;
+                const desc = document.createElement('div');
+                desc.className = 'mdui-list-item-text';
+                const descParts = [];
+                if (!f.isFolder) descParts.push(`${(f.size / 1024 / 1024).toFixed(2)} MB`);
+                if (currentScope === 'pool' && f.uploader) descParts.push(`上传者: ${f.uploader}`);
+                if (isSearch) descParts.push(`位置: ${f.path}`);
+                desc.textContent = descParts.join(' · ');
+                content.appendChild(title);
+                if (descParts.length) content.appendChild(desc);
+                item.appendChild(content);
+
+                // 文件夹整行可点击进入
+                if (f.isFolder) {
+                    item.style.cursor = 'pointer';
+                    item.addEventListener('click', () => enterFolder(f.filename, isSearch ? f.path : null));
+                }
+
+                // 操作按钮
+                if (!f.isFolder) {
+                    item.appendChild(mkAction('cloud_download', '流式下载', () => downloadStream(f.id)));
+                }
+                item.appendChild(mkAction('share', '生成分享', () => createShare(f.id)));
+
+                list.appendChild(item);
+            });
+        }
+
+        // ---------- 分享 ----------
+        function createShare(fileId) {
+            mdui.prompt('请输入提取码（选填，留空则为公开分享）：', '生成分享链接', function (value) {
+                const password = (value || '').trim();
+                apiFetch('/api/share', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ fileId, password })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    const fullShareUrl = window.location.origin + data.url;
-                    let msg = `分享链接已生成：\n${fullShareUrl}`;
-                    if (password) msg += `\n提取码：${password}`;
-                    prompt("请复制分享信息：", msg);
-                } else alert("生成失败：" + (data.error || "未知错误"));
-            } catch (e) { alert("请求分享接口失败！"); }
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        const fullShareUrl = window.location.origin + data.url;
+                        let msg = `分享链接已生成：<br><a href="${fullShareUrl}" target="_blank" style="word-break:break-all;">${fullShareUrl}</a>`;
+                        if (password) msg += `<br>提取码：<b>${escapeHtml(password)}</b>`;
+                        mdui.alert(msg, '分享成功', function () {}, { confirmText: '知道了' });
+                    } else {
+                        mdui.snackbar(data.error || '生成失败');
+                    }
+                })
+                .catch(() => mdui.snackbar('请求分享接口失败！'));
+            }, function () {}, { confirmText: '生成', cancelText: '取消' });
         }
-  
-      async function downloadStream(fileId) {
-          if (!navigator.serviceWorker.controller) return alert("Service Worker 未就绪，请刷新重试！");
-          
-          // 【优化】直接从缓存的 currentDataList 查找数据，不再发 API。同时完美解决了从搜索结果页点下载时的跨目录问题。
-          const fileData = currentDataList.find(f => f.id === fileId);
-          if (!fileData) return alert("文件元数据丢失，请尝试刷新列表！");
-  
-          const taskId = `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-          navigator.serviceWorker.controller.postMessage({
-              type: 'PREPARE_DOWNLOAD', id: taskId,
-              filename: fileData.filename, chunks: fileData.chunks, size: fileData.size
-          });
-  
-          log(`准备调起下载内核引擎处理文件: ${fileData.filename}`);
-          setTimeout(() => {
-              const iframe = document.createElement('iframe');
-              iframe.style.display = 'none';
-              iframe.src = `/virtual-download/${taskId}`; 
-              document.body.appendChild(iframe);
-              setTimeout(() => { document.body.removeChild(iframe); }, 10000);
-          }, 300);
-      }
-  </script>
+
+        // ---------- 流式下载 ----------
+        async function downloadStream(fileId) {
+            if (!navigator.serviceWorker.controller) {
+                return mdui.alert('Service Worker 未就绪，请刷新重试！', '提示');
+            }
+
+            // 直接从缓存的 currentDataList 查找数据，同时解决搜索结果页点下载时的跨目录问题
+            const fileData = currentDataList.find(f => f.id === fileId);
+            if (!fileData) return mdui.snackbar('文件元数据丢失，请尝试刷新列表！');
+
+            const taskId = `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+            navigator.serviceWorker.controller.postMessage({
+                type: 'PREPARE_DOWNLOAD', id: taskId,
+                filename: fileData.filename, chunks: fileData.chunks, size: fileData.size
+            });
+
+            log(`准备调起下载内核引擎处理文件: ${fileData.filename}`);
+            mdui.snackbar(`开始下载: ${fileData.filename}`);
+            setTimeout(() => {
+                const iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                iframe.src = `/virtual-download/${taskId}`;
+                document.body.appendChild(iframe);
+                setTimeout(() => { document.body.removeChild(iframe); }, 10000);
+            }, 300);
+        }
+    </script>
 </body>
 </html>
